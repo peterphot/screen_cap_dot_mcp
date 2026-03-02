@@ -31,6 +31,14 @@ vi.mock("../browser.js", async (importOriginal) => {
   };
 });
 
+// Mock the recording module
+const mockIsRecordingActive = vi.fn().mockReturnValue(false);
+
+vi.mock("../tools/recording.js", () => ({
+  isRecordingActive: (...args: unknown[]) => mockIsRecordingActive(...args),
+  cleanupRecordingState: vi.fn(),
+}));
+
 // Mock page object used by tools
 interface MockPage {
   url: ReturnType<typeof vi.fn>;
@@ -460,5 +468,19 @@ describe("browser_switch_page", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("out of range");
+  });
+
+  it("rejects tab switch while recording is active", async () => {
+    mockIsRecordingActive.mockReturnValue(true);
+    const handler = getToolHandler(server, "browser_switch_page");
+    const result = await handler(
+      { index: 1 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Cannot switch tabs while recording");
+    expect(mockSwitchToPage).not.toHaveBeenCalled();
+    mockIsRecordingActive.mockReturnValue(false);
   });
 });

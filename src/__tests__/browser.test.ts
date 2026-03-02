@@ -56,6 +56,12 @@ vi.mock("puppeteer-core", () => ({
   },
 }));
 
+// Mock the recording module (browser.ts imports cleanupRecordingState)
+vi.mock("../tools/recording.js", () => ({
+  cleanupRecordingState: vi.fn(),
+  isRecordingActive: vi.fn().mockReturnValue(false),
+}));
+
 import {
   ensureBrowser,
   ensurePage,

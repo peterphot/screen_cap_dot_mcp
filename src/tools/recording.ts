@@ -16,11 +16,56 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, writeFile, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ScreenRecorder } from "puppeteer-core";
 import { ensurePage } from "../browser.js";
 import logger from "../util/logger.js";
+
+// ── Path confinement ─────────────────────────────────────────────────────
+
+/**
+ * Read the allowed recording output directory.
+ * Read lazily so env var changes and test overrides take effect.
+ * Defaults to /tmp/screen-cap-recordings.
+ */
+function getRecordingDir(): string {
+  return resolve(process.env.RECORDING_DIR ?? "/tmp/screen-cap-recordings");
+}
+
+/**
+ * Validate that a resolved path is within the allowed directory.
+ * Performs a prefix check to prevent path traversal.
+ */
+function isWithinDir(resolvedPath: string, allowedDir: string): boolean {
+  return resolvedPath.startsWith(allowedDir + "/") || resolvedPath === allowedDir;
+}
+
+/**
+ * Validate and confine a path within the recording directory.
+ * Returns the resolved path or an error message.
+ */
+async function confinePathToRecordingDir(
+  filePath: string,
+): Promise<{ resolvedPath: string } | { error: string }> {
+  const recordingDir = getRecordingDir();
+  const resolvedPath = resolve(filePath);
+
+  if (!isWithinDir(resolvedPath, recordingDir)) {
+    return { error: `Path must be within ${recordingDir}` };
+  }
+
+  await mkdir(dirname(resolvedPath), { recursive: true });
+
+  // Post-mkdir symlink check
+  const realDir = await realpath(dirname(resolvedPath));
+  const realRecordingDir = await realpath(recordingDir);
+  if (!isWithinDir(realDir, realRecordingDir)) {
+    return { error: `Path must be within ${recordingDir} (symlink detected)` };
+  }
+
+  return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
+}
 
 // ── Module-level recording state ────────────────────────────────────────
 
@@ -34,6 +79,31 @@ let keyMoments: Array<{
 }> = [];
 let recordingStartTime: number = 0;
 
+/** Promise guard to prevent concurrent start attempts. */
+let startPromise: Promise<unknown> | null = null;
+
+/** Maximum number of key moments per recording. */
+const MAX_KEY_MOMENTS = 100;
+
+/**
+ * Clear all module-level recording state.
+ * Called on stop, error recovery, and browser disconnect.
+ */
+export function cleanupRecordingState(): void {
+  activeRecorder = null;
+  recordingPath = "";
+  keyMoments = [];
+  recordingStartTime = 0;
+  startPromise = null;
+}
+
+/**
+ * Check whether a recording is currently active.
+ */
+export function isRecordingActive(): boolean {
+  return activeRecorder !== null;
+}
+
 /**
  * Register all recording tools on the given MCP server.
  */
@@ -44,8 +114,8 @@ export function registerRecordingTools(server: McpServer): void {
     "browser_start_recording",
     "Start video capture of the browser page using Puppeteer screencast. Requires ffmpeg installed on the system.",
     {
-      outputPath: z.string().optional(),
-      format: z.enum(["mp4", "webm"]).optional(),
+      outputPath: z.string().optional().describe("File path for the recording output (must be within RECORDING_DIR)"),
+      format: z.enum(["mp4", "webm"]).optional().describe("Video format: mp4 (default) or webm. Requires ffmpeg."),
     },
     async ({ outputPath, format }) => {
       try {
@@ -62,43 +132,100 @@ export function registerRecordingTools(server: McpServer): void {
           };
         }
 
-        const page = await ensurePage();
-        const effectiveFormat = format ?? "mp4";
+        // Concurrency guard: prevent overlapping start attempts
+        if (startPromise) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: A recording start is already in progress.",
+              },
+            ],
+            isError: true,
+          };
+        }
 
-        // Build output path
-        const effectivePath =
-          outputPath ??
-          join(
-            "output/recordings",
-            `${new Date().toISOString().replace(/[:.]/g, "-")}.${effectiveFormat}`,
-          );
+        const doStart = async () => {
+          const page = await ensurePage();
+          const effectiveFormat = format ?? "mp4";
 
-        // Ensure output directory exists
-        await mkdir(dirname(effectivePath), { recursive: true });
+          // Build output path within the allowed recording directory
+          const recordingDir = getRecordingDir();
+          const rawPath =
+            outputPath ??
+            join(
+              recordingDir,
+              `${new Date().toISOString().replace(/[:.]/g, "-")}.${effectiveFormat}`,
+            );
 
-        // Start screencast
-        const recorder = await page.screencast({
-          path: effectivePath as `${string}.${typeof effectiveFormat}`,
-          format: effectiveFormat,
-        });
+          // Confine path
+          const pathResult = await confinePathToRecordingDir(rawPath);
+          if ("error" in pathResult) {
+            return {
+              content: [{ type: "text" as const, text: `Error: ${pathResult.error}` }],
+              isError: true,
+            };
+          }
 
-        // Store state
-        activeRecorder = recorder;
-        recordingPath = effectivePath;
-        keyMoments = [];
-        recordingStartTime = Date.now();
+          const effectivePath = pathResult.resolvedPath;
 
-        logger.info(`Recording started: ${effectivePath}`);
+          // Ensure the extension matches the format
+          if (!effectivePath.endsWith(`.${effectiveFormat}`)) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Error: outputPath extension must match format ".${effectiveFormat}"`,
+                },
+              ],
+              isError: true,
+            };
+          }
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Recording started. Output: ${effectivePath} (format: ${effectiveFormat})`,
-            },
-          ],
+          // Start screencast
+          const recorder = await page.screencast({
+            path: effectivePath as `${string}.${typeof effectiveFormat}`,
+            format: effectiveFormat,
+          });
+
+          // Store state
+          activeRecorder = recorder;
+          recordingPath = effectivePath;
+          keyMoments = [];
+          recordingStartTime = Date.now();
+
+          logger.info(`Recording started: ${effectivePath}`);
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Recording started. Output: ${effectivePath} (format: ${effectiveFormat})`,
+              },
+            ],
+          };
         };
+
+        startPromise = doStart();
+        try {
+          return await (startPromise as Promise<{
+            content: Array<{ type: "text"; text: string }>;
+            isError?: boolean;
+          }>);
+        } finally {
+          startPromise = null;
+        }
       } catch (err) {
+        // Defensive cleanup: if recorder was started but subsequent logic failed
+        if (activeRecorder) {
+          try {
+            await activeRecorder.stop();
+          } catch {
+            /* best-effort */
+          }
+        }
+        cleanupRecordingState();
+
         return {
           content: [
             {
@@ -154,10 +281,7 @@ export function registerRecordingTools(server: McpServer): void {
         const path = recordingPath;
 
         // Clear state
-        activeRecorder = null;
-        recordingPath = "";
-        keyMoments = [];
-        recordingStartTime = 0;
+        cleanupRecordingState();
 
         logger.info(`Recording stopped: ${path} (${durationSec}s)`);
 
@@ -171,10 +295,7 @@ export function registerRecordingTools(server: McpServer): void {
         };
       } catch (err) {
         // Clear state on error to allow recovery
-        activeRecorder = null;
-        recordingPath = "";
-        keyMoments = [];
-        recordingStartTime = 0;
+        cleanupRecordingState();
 
         return {
           content: [
@@ -195,7 +316,7 @@ export function registerRecordingTools(server: McpServer): void {
     "browser_screenshot_key_moment",
     "Capture a labeled screenshot and accessibility snapshot during an active recording. The moment is tagged with a timestamp offset from the recording start.",
     {
-      label: z.string(),
+      label: z.string().max(200).describe("Human-readable label for this key moment (max 200 chars)"),
     },
     async ({ label }) => {
       try {
@@ -211,36 +332,62 @@ export function registerRecordingTools(server: McpServer): void {
           };
         }
 
+        if (keyMoments.length >= MAX_KEY_MOMENTS) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: Maximum of ${MAX_KEY_MOMENTS} key moments reached for this recording.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const page = await ensurePage();
         const timestamp = Date.now() - recordingStartTime;
         const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filePrefix = `${Date.now()}-${safeLabel}`;
 
-        // Take screenshot
-        const screenshotPath = join("output/screenshots", `${filePrefix}.png`);
-        await mkdir(dirname(screenshotPath), { recursive: true });
-        const buffer = (await page.screenshot()) as Buffer;
-        await writeFile(screenshotPath, buffer);
+        // Build paths within the recording directory
+        const recordingDir = getRecordingDir();
+        const screenshotRawPath = join(recordingDir, "screenshots", `${filePrefix}.png`);
+        const a11yRawPath = join(recordingDir, "a11y", `${filePrefix}.json`);
 
-        // Capture a11y snapshot
-        let a11yPath: string | undefined;
-        try {
-          const a11yFilePath = join("output/a11y", `${filePrefix}.json`);
-          await mkdir(dirname(a11yFilePath), { recursive: true });
-          const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
-          await writeFile(a11yFilePath, JSON.stringify(snapshot, null, 2));
-          a11yPath = a11yFilePath;
-        } catch {
-          // a11y capture is optional — log and continue
-          logger.warn(`Failed to capture a11y snapshot for key moment "${label}"`);
-        }
+        // Capture screenshot and a11y snapshot in parallel (independent operations)
+        const [screenshotResult, a11yResult] = await Promise.all([
+          (async () => {
+            const pathResult = await confinePathToRecordingDir(screenshotRawPath);
+            if ("error" in pathResult) {
+              throw new Error(pathResult.error);
+            }
+            const buffer = (await page.screenshot()) as Buffer;
+            await writeFile(pathResult.resolvedPath, buffer);
+            return pathResult.resolvedPath;
+          })(),
+          (async (): Promise<string | undefined> => {
+            try {
+              const pathResult = await confinePathToRecordingDir(a11yRawPath);
+              if ("error" in pathResult) {
+                logger.warn(`Failed to confine a11y path: ${pathResult.error}`);
+                return undefined;
+              }
+              const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
+              await writeFile(pathResult.resolvedPath, JSON.stringify(snapshot, null, 2));
+              return pathResult.resolvedPath;
+            } catch {
+              logger.warn(`Failed to capture a11y snapshot for key moment "${label}"`);
+              return undefined;
+            }
+          })(),
+        ]);
 
         // Add to key moments
         keyMoments.push({
           label,
           timestamp,
-          screenshotPath,
-          a11yPath,
+          screenshotPath: screenshotResult,
+          a11yPath: a11yResult,
         });
 
         logger.info(
@@ -251,7 +398,7 @@ export function registerRecordingTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Key moment "${label}" captured at ${(timestamp / 1000).toFixed(1)}s. Screenshot: ${screenshotPath}${a11yPath ? `, A11y: ${a11yPath}` : ""}`,
+              text: `Key moment "${label}" captured at ${(timestamp / 1000).toFixed(1)}s. Screenshot: ${screenshotResult}${a11yResult ? `, A11y: ${a11yResult}` : ""}`,
             },
           ],
         };
