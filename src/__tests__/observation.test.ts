@@ -25,10 +25,12 @@ vi.mock("../browser.js", () => ({
 // Mock node:fs/promises for savePath tests
 const mockWriteFile = vi.fn();
 const mockMkdir = vi.fn();
+const mockRealpath = vi.fn();
 
 vi.mock("node:fs/promises", () => ({
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   mkdir: (...args: unknown[]) => mockMkdir(...args),
+  realpath: (...args: unknown[]) => mockRealpath(...args),
 }));
 
 // Mock page object used by tools
@@ -132,6 +134,8 @@ beforeEach(async () => {
   mockEnsurePage.mockResolvedValue(mockPage);
   mockWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
+  // By default, realpath returns the path unchanged (no symlinks)
+  mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -256,6 +260,26 @@ describe("browser_screenshot", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("savePath must be within");
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects savePath when realpath reveals symlink escape", async () => {
+    // Simulate a symlink: /tmp/screen-cap-screenshots/escape -> /etc
+    mockRealpath.mockImplementation((p: string) => {
+      if (p === "/tmp/screen-cap-screenshots/escape") {
+        return Promise.resolve("/etc");
+      }
+      return Promise.resolve(p);
+    });
+
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { savePath: "/tmp/screen-cap-screenshots/escape/evil.png" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("symlink detected");
     expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
@@ -421,6 +445,21 @@ describe("browser_get_text", () => {
     expect(result.content).toHaveLength(1);
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toBe("Hello World");
+  });
+
+  it("truncates very large text content", async () => {
+    const largeText = "x".repeat(600_000);
+    mockPage.$eval.mockResolvedValue(largeText);
+
+    const handler = getToolHandler(server, "browser_get_text");
+    const result = await handler(
+      { selector: "body" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("... (truncated, total 600000 chars)");
+    expect(result.content[0].text.length).toBeLessThanOrEqual(512_000 + 100);
   });
 
   it("returns error text when selector is not found (does not throw)", async () => {

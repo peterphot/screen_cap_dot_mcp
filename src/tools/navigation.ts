@@ -82,7 +82,7 @@ export function registerNavigationTools(server: McpServer): void {
         }
 
         const page = await ensurePage();
-        await page.goto(url, {
+        await page.goto(parsed.href, {
           waitUntil: waitUntil ?? "load",
           timeout: DEFAULT_TIMEOUT_MS,
         });
@@ -184,10 +184,17 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_evaluate",
-    "Run arbitrary JavaScript in the page context and return the result.",
+    "Run arbitrary JavaScript in the page context and return the result. WARNING: This executes code with full access to the page (cookies, localStorage, DOM, network). Only use in trusted environments.",
     { script: z.string() },
     async ({ script }) => {
       try {
+        if (process.env.ALLOW_EVALUATE === "false") {
+          return {
+            content: [{ type: "text" as const, text: "Error: browser_evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution." }],
+            isError: true,
+          };
+        }
+
         const page = await ensurePage();
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await page.evaluate(script);

@@ -13,8 +13,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { writeFile, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { writeFile, mkdir, realpath } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { ensurePage } from "../browser.js";
 import logger from "../util/logger.js";
 
@@ -29,6 +29,9 @@ function getScreenshotDir(): string {
 
 /** Maximum character length for a11y tree JSON before truncation. */
 const MAX_A11Y_CHARS = 512_000;
+
+/** Maximum character length for extracted text before truncation. */
+const MAX_TEXT_CHARS = 512_000;
 
 /**
  * Register all observation tools on the given MCP server.
@@ -48,7 +51,7 @@ export function registerObservationTools(server: McpServer): void {
       try {
         const page = await ensurePage();
 
-        // Validate savePath is within the allowed directory
+        // Validate savePath is within the allowed directory (prefix check + symlink resolution)
         let resolvedSavePath: string | undefined;
         if (savePath) {
           const screenshotDir = getScreenshotDir();
@@ -75,7 +78,16 @@ export function registerObservationTools(server: McpServer): void {
           if (resolvedSavePath) {
             const buffer = (await element.screenshot()) as Buffer;
             await mkdir(dirname(resolvedSavePath), { recursive: true });
-            await writeFile(resolvedSavePath, buffer);
+            // Re-check after mkdir in case of symlinks in the created path
+            const realDir = await realpath(dirname(resolvedSavePath));
+            const realScreenshotDir = await realpath(getScreenshotDir());
+            if (!realDir.startsWith(realScreenshotDir + "/") && realDir !== realScreenshotDir) {
+              return {
+                content: [{ type: "text" as const, text: `Error: savePath must be within ${getScreenshotDir()} (symlink detected)` }],
+                isError: true,
+              };
+            }
+            await writeFile(resolve(realDir, basename(resolvedSavePath)), buffer);
             logger.info(`Screenshot saved to ${resolvedSavePath}`);
             base64 = buffer.toString("base64");
           } else {
@@ -87,7 +99,16 @@ export function registerObservationTools(server: McpServer): void {
           if (resolvedSavePath) {
             const buffer = (await page.screenshot(opts)) as Buffer;
             await mkdir(dirname(resolvedSavePath), { recursive: true });
-            await writeFile(resolvedSavePath, buffer);
+            // Re-check after mkdir in case of symlinks in the created path
+            const realDir = await realpath(dirname(resolvedSavePath));
+            const realScreenshotDir = await realpath(getScreenshotDir());
+            if (!realDir.startsWith(realScreenshotDir + "/") && realDir !== realScreenshotDir) {
+              return {
+                content: [{ type: "text" as const, text: `Error: savePath must be within ${getScreenshotDir()} (symlink detected)` }],
+                isError: true,
+              };
+            }
+            await writeFile(resolve(realDir, basename(resolvedSavePath)), buffer);
             logger.info(`Screenshot saved to ${resolvedSavePath}`);
             base64 = buffer.toString("base64");
           } else {
@@ -190,7 +211,11 @@ export function registerObservationTools(server: McpServer): void {
     async ({ selector }) => {
       try {
         const page = await ensurePage();
-        const text = await page.$eval(selector, (el: Element) => (el as HTMLElement).innerText);
+        const raw = await page.$eval(selector, (el: Element) => (el as HTMLElement).innerText);
+
+        const text = raw.length > MAX_TEXT_CHARS
+          ? raw.slice(0, MAX_TEXT_CHARS) + `\n... (truncated, total ${raw.length} chars)`
+          : raw;
 
         return {
           content: [{ type: "text" as const, text }],
