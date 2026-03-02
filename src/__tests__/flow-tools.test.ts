@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
@@ -20,13 +21,17 @@ const mockReaddir = vi.fn();
 const mockReadFile = vi.fn();
 const mockWriteFile = vi.fn();
 const mockMkdir = vi.fn();
+const mockRealpath = vi.fn();
 
 vi.mock("node:fs/promises", () => ({
   readdir: (...args: unknown[]) => mockReaddir(...args),
   readFile: (...args: unknown[]) => mockReadFile(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   mkdir: (...args: unknown[]) => mockMkdir(...args),
+  realpath: (...args: unknown[]) => mockRealpath(...args),
 }));
+
+const RESOLVED_FLOWS_DIR = resolve("flows");
 
 const mockFlowRunnerRun = vi.fn();
 
@@ -86,6 +91,8 @@ describe("Flow tools registration", () => {
     tools = getRegisteredTools(server);
     mockMkdir.mockResolvedValue(undefined);
     mockWriteFile.mockResolvedValue(undefined);
+    // Default realpath mock: return the path unchanged (no symlinks)
+    mockRealpath.mockImplementation(async (p: string) => p);
   });
 
   it("registers all 3 flow tools", () => {
@@ -131,7 +138,10 @@ describe("Flow tools registration", () => {
 
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toContain("test-flow");
-      expect(mockReadFile).toHaveBeenCalledWith("flows/test-flow.json", "utf-8");
+      expect(mockReadFile).toHaveBeenCalledWith(
+        expect.stringContaining("test-flow.json"),
+        "utf-8",
+      );
     });
 
     it("passes record override to runner", async () => {
@@ -313,8 +323,11 @@ describe("Flow tools registration", () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toContain("My Test Flow");
       expect(result.content[0].text).toContain("my_test_flow.json");
-      expect(mockWriteFile).toHaveBeenCalled();
-      expect(mockMkdir).toHaveBeenCalledWith("flows", { recursive: true });
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining("my_test_flow.json"),
+        expect.any(String),
+      );
+      expect(mockMkdir).toHaveBeenCalledWith(RESOLVED_FLOWS_DIR, { recursive: true });
     });
 
     it("rejects invalid flow definition", async () => {
@@ -351,6 +364,71 @@ describe("Flow tools registration", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Disk full");
+    });
+  });
+
+  // ── Path traversal & confinement ──────────────────────────────────
+
+  describe("path traversal protection", () => {
+    it("rejects flow name with forward slash", async () => {
+      const handler = tools.get("browser_run_flow")!;
+
+      const result = await handler({ name: "../../../etc/passwd" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid flow name");
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects flow name with backslash", async () => {
+      const handler = tools.get("browser_run_flow")!;
+
+      const result = await handler({ name: "..\\..\\etc\\passwd" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid flow name");
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects flow name with dot-dot", async () => {
+      const handler = tools.get("browser_run_flow")!;
+
+      const result = await handler({ name: "..secret" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid flow name");
+    });
+
+    it("detects symlink escape on save", async () => {
+      // confinePathToFlowDir calls realpath twice:
+      //   1. realpath(dirname(resolvedPath)) — simulate symlink escaping to /etc
+      //   2. realpath(flowsDir) — return the real flows dir
+      mockRealpath
+        .mockResolvedValueOnce("/etc")
+        .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
+
+      const handler = tools.get("browser_save_flow")!;
+      const result = await handler({
+        flow: {
+          name: "legit",
+          steps: [{ action: "navigate", url: "https://example.com" }],
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("symlink detected");
+    });
+
+    it("detects symlink escape on run", async () => {
+      mockRealpath
+        .mockResolvedValueOnce("/etc")
+        .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
+
+      const handler = tools.get("browser_run_flow")!;
+      const result = await handler({ name: "legit" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("symlink detected");
     });
   });
 });
