@@ -15,6 +15,7 @@ import { registerNavigationTools } from "./tools/navigation.js";
 import { registerObservationTools } from "./tools/observation.js";
 import { registerWaitingTools } from "./tools/waiting.js";
 import { registerScrollingTools } from "./tools/scrolling.js";
+import { registerRecordingTools } from "./tools/recording.js";
 
 // ── Server Setup ────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ registerNavigationTools(server);
 registerObservationTools(server);
 registerWaitingTools(server);
 registerScrollingTools(server);
+registerRecordingTools(server);
 
 // ── Start Server ────────────────────────────────────────────────────────
 
