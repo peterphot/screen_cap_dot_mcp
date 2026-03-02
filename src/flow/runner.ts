@@ -11,13 +11,69 @@
  * 7. Stops recording at end
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, writeFile, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Page, ScreenRecorder } from "puppeteer-core";
-import { ensurePage } from "../browser.js";
+import { ensurePage, DEFAULT_TIMEOUT_MS } from "../browser.js";
 import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
+
+// ── Path confinement ──────────────────────────────────────────────────────
+
+/**
+ * Read the allowed flow output directory.
+ * Read lazily so env var changes and test overrides take effect.
+ * Defaults to /tmp/screen-cap-flows.
+ */
+function getFlowOutputDir(): string {
+  const raw = process.env.FLOW_OUTPUT_DIR ?? "/tmp/screen-cap-flows";
+  const resolved = resolve(raw);
+  if (resolved === "/") {
+    throw new Error("FLOW_OUTPUT_DIR must not resolve to the filesystem root.");
+  }
+  return resolved;
+}
+
+function isWithinDir(resolvedPath: string, allowedDir: string): boolean {
+  return resolvedPath.startsWith(allowedDir + "/") || resolvedPath === allowedDir;
+}
+
+async function confinePathToFlowDir(
+  filePath: string,
+): Promise<{ resolvedPath: string } | { error: string }> {
+  const flowDir = getFlowOutputDir();
+  const resolvedPath = resolve(filePath);
+
+  if (!isWithinDir(resolvedPath, flowDir)) {
+    return { error: `Path must be within ${flowDir}` };
+  }
+
+  await mkdir(dirname(resolvedPath), { recursive: true });
+
+  const realDir = await realpath(dirname(resolvedPath));
+  const realFlowDir = await realpath(flowDir);
+  if (!isWithinDir(realDir, realFlowDir)) {
+    return { error: `Path must be within ${flowDir} (symlink detected)` };
+  }
+
+  return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
+}
+
+// ── URL validation ────────────────────────────────────────────────────────
+
+function validateNavigationUrl(url: string): { href: string } | { error: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { error: `Invalid URL "${url}"` };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { error: `Only http: and https: URLs are allowed, got "${parsed.protocol}"` };
+  }
+  return { href: parsed.href };
+}
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -55,10 +111,16 @@ export class FlowRunner {
     const runStart = Date.now();
     const page = await ensurePage();
 
-    // Create output directory
+    // Create output directory within confined flow output dir
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const safeName = flow.name.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const outputDir = join("output", `${safeName}-${timestamp}`);
+    const flowDir = getFlowOutputDir();
+    const rawOutputDir = join(flowDir, `${safeName}-${timestamp}`);
+    const dirResult = await confinePathToFlowDir(join(rawOutputDir, "placeholder"));
+    if ("error" in dirResult) {
+      throw new Error(dirResult.error);
+    }
+    const outputDir = dirname(dirResult.resolvedPath);
     await mkdir(outputDir, { recursive: true });
 
     logger.info(`Flow "${flow.name}" started — output: ${outputDir}`);
@@ -93,7 +155,7 @@ export class FlowRunner {
       };
 
       try {
-        await this.executeStep(page, step, outputDir);
+        await this.executeStep(page, step, outputDir, i);
         result.success = true;
 
         // Capture labeled screenshot/a11y if this step has a label
@@ -157,14 +219,19 @@ export class FlowRunner {
 
   // ── Step execution ───────────────────────────────────────────────────
 
-  private async executeStep(page: Page, step: FlowStep, outputDir: string): Promise<void> {
+  private async executeStep(page: Page, step: FlowStep, outputDir: string, stepIndex: number): Promise<void> {
     switch (step.action) {
-      case "navigate":
-        await page.goto(step.url, {
+      case "navigate": {
+        const urlResult = validateNavigationUrl(step.url);
+        if ("error" in urlResult) {
+          throw new Error(urlResult.error);
+        }
+        await page.goto(urlResult.href, {
           waitUntil: step.waitUntil ?? "load",
-          timeout: 60000,
+          timeout: DEFAULT_TIMEOUT_MS,
         });
         break;
+      }
 
       case "click":
         await page.waitForSelector(step.selector, { visible: true });
@@ -200,7 +267,7 @@ export class FlowRunner {
         break;
 
       case "screenshot": {
-        const label = step.label ?? `step-screenshot`;
+        const label = step.label ?? `step-${stepIndex}-screenshot`;
         const screenshotPath = join(outputDir, `${label}.png`);
         if (step.selector) {
           const el = await page.$(step.selector);
@@ -215,7 +282,7 @@ export class FlowRunner {
       }
 
       case "a11y_snapshot": {
-        const label = step.label ?? `step-a11y`;
+        const label = step.label ?? `step-${stepIndex}-a11y`;
         const a11yPath = join(outputDir, `${label}.json`);
         const snapshot = await page.accessibility.snapshot({
           interestingOnly: step.interestingOnly ?? true,
@@ -225,6 +292,9 @@ export class FlowRunner {
       }
 
       case "evaluate":
+        if (process.env.ALLOW_EVALUATE === "false") {
+          throw new Error("evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution.");
+        }
         await page.evaluate(step.script);
         break;
 
