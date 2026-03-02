@@ -24,9 +24,9 @@ export function registerScrollingTools(server: McpServer): void {
     "browser_scroll",
     "Scroll the page or a specific container element in a given direction by a pixel amount.",
     {
-      direction: z.enum(["up", "down", "left", "right"]),
-      amount: z.number().optional(),
-      selector: z.string().optional(),
+      direction: z.enum(["up", "down", "left", "right"]).describe("Scroll direction"),
+      amount: z.number().optional().describe("Pixels to scroll (default: 500)"),
+      selector: z.string().optional().describe("CSS selector of a scrollable container (omit to scroll the page)"),
     },
     async ({ direction, amount, selector }) => {
       try {
@@ -124,19 +124,23 @@ export function registerScrollingTools(server: McpServer): void {
     "browser_scroll_to_element",
     "Scroll a specific element into view using smooth scrolling, centering it in the viewport.",
     {
-      selector: z.string(),
+      selector: z.string().describe("CSS selector of the element to scroll into view"),
     },
     async ({ selector }) => {
       try {
         const page = await ensurePage();
 
         const found = await page.evaluate((sel: string) => {
-          const element = document.querySelector(sel);
-          if (!element) {
-            return false;
-          }
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-          return true;
+          return new Promise<boolean>((resolve) => {
+            const element = document.querySelector(sel);
+            if (!element) {
+              resolve(false);
+              return;
+            }
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            // Wait 350ms for smooth scroll to settle (typically 300-500ms)
+            setTimeout(() => resolve(true), 350);
+          });
         }, selector);
 
         if (!found) {

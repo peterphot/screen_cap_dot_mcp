@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DEFAULT_TIMEOUT_MS } from "../browser.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
@@ -19,11 +20,32 @@ const mockEnsurePage = vi.fn();
 const mockListAllPages = vi.fn();
 const mockSwitchToPage = vi.fn();
 
-vi.mock("../browser.js", () => ({
-  ensureBrowser: (...args: unknown[]) => mockEnsureBrowser(...args),
-  ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
-  listAllPages: (...args: unknown[]) => mockListAllPages(...args),
-  switchToPage: (...args: unknown[]) => mockSwitchToPage(...args),
+vi.mock("../browser.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../browser.js")>();
+  return {
+    ...actual,
+    ensureBrowser: (...args: unknown[]) => mockEnsureBrowser(...args),
+    ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
+    listAllPages: (...args: unknown[]) => mockListAllPages(...args),
+    switchToPage: (...args: unknown[]) => mockSwitchToPage(...args),
+  };
+});
+
+// Mock the recording-state module (navigation.ts imports isRecordingActive)
+const mockIsRecordingActive = vi.fn().mockReturnValue(false);
+
+vi.mock("../recording-state.js", () => ({
+  isRecordingActive: (...args: unknown[]) => mockIsRecordingActive(...args),
+  cleanupRecordingState: vi.fn(),
+  stopActiveRecording: vi.fn().mockResolvedValue(undefined),
+  recState: {
+    recorder: null,
+    path: "",
+    keyMoments: [],
+    startTime: 0,
+    startPromise: null,
+  },
+  MAX_KEY_MOMENTS: 100,
 }));
 
 // Mock page object used by tools
@@ -167,8 +189,9 @@ describe("browser_navigate", () => {
     expect(mockEnsurePage).toHaveBeenCalled();
     expect(mockPage.goto).toHaveBeenCalledWith("https://example.com/page", {
       waitUntil: "load",
-      timeout: 60000,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
+    // Verify we pass parsed.href (not raw input) to page.goto
     expect(result.content[0].text).toContain("https://example.com/page");
     expect(result.content[0].text).toContain("Page Title");
   });
@@ -180,9 +203,9 @@ describe("browser_navigate", () => {
       { signal: new AbortController().signal },
     );
 
-    expect(mockPage.goto).toHaveBeenCalledWith("https://example.com", {
+    expect(mockPage.goto).toHaveBeenCalledWith("https://example.com/", {
       waitUntil: "networkidle2",
-      timeout: 60000,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
   });
 
@@ -196,6 +219,42 @@ describe("browser_navigate", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Navigation timeout");
+  });
+
+  it("rejects file:// URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "file:///etc/passwd" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects javascript: URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "javascript:alert(1)" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "not-a-valid-url" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Invalid URL");
+    expect(mockPage.goto).not.toHaveBeenCalled();
   });
 });
 
@@ -327,6 +386,28 @@ describe("browser_evaluate", () => {
     expect(result.isError).toBeFalsy();
   });
 
+  it("returns error when ALLOW_EVALUATE=false", async () => {
+    const original = process.env.ALLOW_EVALUATE;
+    process.env.ALLOW_EVALUATE = "false";
+    try {
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "1+1" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("browser_evaluate is disabled");
+      expect(mockPage.evaluate).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
+  });
+
   it("returns error text when script throws", async () => {
     mockPage.evaluate.mockRejectedValue(new Error("ReferenceError: x is not defined"));
     const handler = getToolHandler(server, "browser_evaluate");
@@ -396,5 +477,19 @@ describe("browser_switch_page", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("out of range");
+  });
+
+  it("rejects tab switch while recording is active", async () => {
+    mockIsRecordingActive.mockReturnValue(true);
+    const handler = getToolHandler(server, "browser_switch_page");
+    const result = await handler(
+      { index: 1 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Cannot switch tabs while recording");
+    expect(mockSwitchToPage).not.toHaveBeenCalled();
+    mockIsRecordingActive.mockReturnValue(false);
   });
 });

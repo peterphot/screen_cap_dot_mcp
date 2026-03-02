@@ -22,7 +22,9 @@ import {
   ensurePage,
   listAllPages,
   switchToPage,
+  DEFAULT_TIMEOUT_MS,
 } from "../browser.js";
+import { isRecordingActive } from "../recording-state.js";
 
 /**
  * Register all navigation tools on the given MCP server.
@@ -33,7 +35,7 @@ export function registerNavigationTools(server: McpServer): void {
   server.tool(
     "browser_connect",
     "Connect to Chrome via CDP. Uses an already-running Chrome instance with remote debugging enabled.",
-    { port: z.number().optional() },
+    {},
     async () => {
       try {
         await ensureBrowser();
@@ -63,10 +65,27 @@ export function registerNavigationTools(server: McpServer): void {
     },
     async ({ url, waitUntil }) => {
       try {
+        // Validate URL scheme to prevent file:// and javascript: navigation
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          return {
+            content: [{ type: "text" as const, text: `Error navigating: Invalid URL "${url}"` }],
+            isError: true,
+          };
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return {
+            content: [{ type: "text" as const, text: `Error navigating: Only http: and https: URLs are allowed, got "${parsed.protocol}"` }],
+            isError: true,
+          };
+        }
+
         const page = await ensurePage();
-        await page.goto(url, {
+        await page.goto(parsed.href, {
           waitUntil: waitUntil ?? "load",
-          timeout: 60000,
+          timeout: DEFAULT_TIMEOUT_MS,
         });
         const finalUrl = page.url();
         const title = await page.title();
@@ -166,10 +185,17 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_evaluate",
-    "Run arbitrary JavaScript in the page context and return the result.",
+    "Run arbitrary JavaScript in the page context and return the result. WARNING: This executes code with full access to the page (cookies, localStorage, DOM, network). Only use in trusted environments.",
     { script: z.string() },
     async ({ script }) => {
       try {
+        if (process.env.ALLOW_EVALUATE === "false") {
+          return {
+            content: [{ type: "text" as const, text: "Error: browser_evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution." }],
+            isError: true,
+          };
+        }
+
         const page = await ensurePage();
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await page.evaluate(script);
@@ -214,6 +240,12 @@ export function registerNavigationTools(server: McpServer): void {
     { index: z.number() },
     async ({ index }) => {
       try {
+        if (isRecordingActive()) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Cannot switch tabs while recording is active. Stop the recording first." }],
+            isError: true,
+          };
+        }
         const page = await switchToPage(index);
         const url = page.url();
         const title = await page.title();

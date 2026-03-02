@@ -11,10 +11,12 @@
  * - `browserURL` (HTTP) connection is simpler than websocket for CDP
  * - 60-second default navigation timeout for data-heavy SPAs
  * - Lazy reconnection: disconnect nulls refs, next ensure* call reconnects
+ * - Promise guards on ensure* functions prevent duplicate connections under concurrency
  */
 
 import puppeteer, { type Browser, type Page, type CDPSession } from "puppeteer-core";
 import logger from "./util/logger.js";
+import { cleanupRecordingState } from "./recording-state.js";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -31,42 +33,95 @@ let browser: Browser | null = null;
 let page: Page | null = null;
 let cdpSession: CDPSession | null = null;
 
-/** The CDP endpoint to connect to. */
-const BROWSER_URL = "http://127.0.0.1:9222";
+// Promise guards to prevent duplicate connections under concurrent calls
+let browserPromise: Promise<Browser> | null = null;
+let pagePromise: Promise<Page> | null = null;
+let cdpSessionPromise: Promise<CDPSession> | null = null;
 
 /** Default navigation timeout in milliseconds (60 seconds). */
-const DEFAULT_TIMEOUT_MS = 60_000;
+export const DEFAULT_TIMEOUT_MS = 60_000;
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * Read and validate the CDP endpoint URL.
+ * Read lazily so env var changes and test overrides take effect.
+ * Restricts to loopback addresses by default to prevent SSRF.
+ */
+function getBrowserUrl(): string {
+  const raw = process.env.CHROME_CDP_URL ?? "http://127.0.0.1:9222";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`Invalid CHROME_CDP_URL: "${raw}" is not a valid URL.`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error(
+      `Invalid CHROME_CDP_URL scheme "${parsed.protocol}". Only http: and https: are allowed.`,
+    );
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new Error(
+      `CHROME_CDP_URL host "${parsed.hostname}" is not a loopback address. ` +
+      `Only ${[...LOOPBACK_HOSTS].join(", ")} are allowed by default.`,
+    );
+  }
+  return raw;
+}
 
 // ── Connection management ───────────────────────────────────────────────
 
 /**
  * Connect to Chrome via CDP, or return the existing connection.
  *
- * On first call, connects to Chrome at `http://127.0.0.1:9222`.
- * On subsequent calls, returns the cached Browser instance.
- * If Chrome disconnects, the next call will reconnect automatically.
+ * Uses a promise guard so concurrent callers share a single connection attempt.
+ * Throws a descriptive error if Chrome is unreachable.
  */
 export async function ensureBrowser(): Promise<Browser> {
-  if (browser) {
-    return browser;
+  if (browser) return browser;
+  if (browserPromise) return browserPromise;
+
+  browserPromise = (async () => {
+    const browserUrl = getBrowserUrl();
+    logger.info(`Connecting to Chrome at ${browserUrl}`);
+
+    let b: Browser;
+    try {
+      b = await puppeteer.connect({
+        browserURL: browserUrl,
+        defaultViewport: null,
+      });
+    } catch (err) {
+      throw new Error(
+        `Failed to connect to Chrome at ${browserUrl}. ` +
+        `Ensure Chrome is running with --remote-debugging-port=9222.`,
+        { cause: err },
+      );
+    }
+
+    b.on("disconnected", () => {
+      logger.warn("Browser disconnected — refs nulled, will reconnect on next call");
+      cleanupRecordingState();
+      browser = null;
+      page = null;
+      cdpSession = null;
+      browserPromise = null;
+      pagePromise = null;
+      cdpSessionPromise = null;
+    });
+
+    browser = b;
+    logger.info("Connected to Chrome successfully");
+    return b;
+  })();
+
+  try {
+    return await browserPromise;
+  } catch (err) {
+    browserPromise = null;
+    throw err;
   }
-
-  logger.info(`Connecting to Chrome at ${BROWSER_URL}`);
-
-  browser = await puppeteer.connect({
-    browserURL: BROWSER_URL,
-    defaultViewport: null,
-  });
-
-  browser.on("disconnected", () => {
-    logger.warn("Browser disconnected — refs nulled, will reconnect on next call");
-    browser = null;
-    page = null;
-    cdpSession = null;
-  });
-
-  logger.info("Connected to Chrome successfully");
-  return browser;
 }
 
 /**
@@ -77,22 +132,35 @@ export async function ensureBrowser(): Promise<Browser> {
  * Throws if Chrome has no open tabs.
  */
 export async function ensurePage(): Promise<Page> {
-  if (page) {
+  if (page) return page;
+  if (pagePromise) return pagePromise;
+
+  pagePromise = (async () => {
+    const b = await ensureBrowser();
+    const pages = await b.pages();
+
+    // Guard: browser may have disconnected during the await above
+    if (!browser) {
+      throw new Error("Browser disconnected during page initialization.");
+    }
+
+    if (pages.length === 0) {
+      throw new Error("No open tabs found in Chrome. Open at least one tab and try again.");
+    }
+
+    page = pages[0];
+    page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
+
+    logger.info(`Active page: ${page.url()}`);
     return page;
+  })();
+
+  try {
+    return await pagePromise;
+  } catch (err) {
+    pagePromise = null;
+    throw err;
   }
-
-  const b = await ensureBrowser();
-  const pages = await b.pages();
-
-  if (pages.length === 0) {
-    throw new Error("No open tabs found in Chrome. Open at least one tab and try again.");
-  }
-
-  page = pages[0];
-  page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
-
-  logger.info(`Active page: ${page.url()}`);
-  return page;
 }
 
 /**
@@ -102,15 +170,35 @@ export async function ensurePage(): Promise<Page> {
  * Returns the cached session on subsequent calls.
  */
 export async function ensureCDPSession(): Promise<CDPSession> {
-  if (cdpSession) {
+  if (cdpSession) return cdpSession;
+  if (cdpSessionPromise) return cdpSessionPromise;
+
+  cdpSessionPromise = (async () => {
+    const p = await ensurePage();
+
+    // Guard: browser may have disconnected during the await above
+    if (!browser) {
+      throw new Error("Browser disconnected during CDP session creation.");
+    }
+
+    const session = await p.createCDPSession();
+
+    // Guard: browser may have disconnected during createCDPSession
+    if (!browser) {
+      throw new Error("Browser disconnected during CDP session creation.");
+    }
+
+    cdpSession = session;
+    logger.info("CDP session created");
     return cdpSession;
+  })();
+
+  try {
+    return await cdpSessionPromise;
+  } catch (err) {
+    cdpSessionPromise = null;
+    throw err;
   }
-
-  const p = await ensurePage();
-  cdpSession = await p.createCDPSession();
-
-  logger.info("CDP session created");
-  return cdpSession;
 }
 
 // ── Tab management ──────────────────────────────────────────────────────
@@ -158,7 +246,9 @@ export async function switchToPage(index: number): Promise<Page> {
 
   // Update singleton refs
   page = target;
+  page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
   cdpSession = null; // Reset — new page needs a new CDP session
+  cdpSessionPromise = null;
 
   logger.info(`Switched to tab ${index}: ${target.url()}`);
   return target;
@@ -186,4 +276,17 @@ export function getBrowser(): Browser {
     throw new Error("Not connected to Chrome. Call ensureBrowser() first.");
   }
   return browser;
+}
+
+/**
+ * Reset all singleton state. For testing only.
+ * @internal
+ */
+export function _resetForTesting(): void {
+  browser = null;
+  page = null;
+  cdpSession = null;
+  browserPromise = null;
+  pagePromise = null;
+  cdpSessionPromise = null;
 }
