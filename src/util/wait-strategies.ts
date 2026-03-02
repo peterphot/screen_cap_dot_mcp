@@ -66,8 +66,13 @@ export async function smartWait(
           timeout: selectorTimeout,
         });
       } catch (err) {
-        // Swallow timeout errors — the selector may not exist on the page
-        logger.debug(`Loading indicator check skipped for "${selector}": ${(err as Error).message}`);
+        const msg = (err as Error).message;
+        if (msg.includes("Timeout") || msg.includes("waiting for selector")) {
+          // Swallow timeout errors — the selector may not exist on the page
+          logger.debug(`Loading indicator check skipped for "${selector}": ${msg}`);
+        } else {
+          throw err;
+        }
       }
     }),
   );

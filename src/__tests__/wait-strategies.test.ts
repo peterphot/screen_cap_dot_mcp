@@ -156,6 +156,14 @@ describe("smartWait", () => {
     expect(mockLoggerInfo).toHaveBeenCalled();
   });
 
+  it("propagates non-timeout errors from individual selectors", async () => {
+    mockWaitForSelector.mockRejectedValue(new Error("Execution context was destroyed"));
+
+    const { smartWait } = await import("../util/wait-strategies.js");
+
+    await expect(smartWait(mockPage as any)).rejects.toThrow("Execution context was destroyed");
+  });
+
   it("propagates non-timeout errors from network idle", async () => {
     mockWaitForNetworkIdle.mockRejectedValue(new Error("Page crashed"));
 
