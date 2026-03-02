@@ -131,12 +131,20 @@ export function registerScrollingTools(server: McpServer): void {
         const page = await ensurePage();
 
         const found = await page.evaluate((sel: string) => {
-          const element = document.querySelector(sel);
-          if (!element) {
-            return false;
-          }
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-          return true;
+          return new Promise<boolean>((resolve) => {
+            const element = document.querySelector(sel);
+            if (!element) {
+              resolve(false);
+              return;
+            }
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            // Wait for smooth scroll to settle before resolving
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve(true);
+              });
+            });
+          });
         }, selector);
 
         if (!found) {

@@ -85,7 +85,7 @@ export function registerWaitingTools(server: McpServer): void {
       try {
         const page = await ensurePage();
         const effectiveTimeout = timeout ?? 30000;
-        const effectiveIdleTime = idleTime || 500;
+        const effectiveIdleTime = idleTime ?? 500;
 
         await page.waitForNetworkIdle({
           idleTime: effectiveIdleTime,
