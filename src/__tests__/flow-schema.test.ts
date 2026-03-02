@@ -159,6 +159,74 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects negative timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects Infinity timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: Infinity,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects timeout exceeding max (300000)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: 300_001,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative sleep duration", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "sleep",
+      duration: -100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects Infinity sleep duration", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "sleep",
+      duration: Infinity,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative scroll amount", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll",
+      amount: -500,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty evaluate script", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "evaluate",
+      script: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty wait/function function", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "function",
+      function: "",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("RecordingConfigSchema", () => {

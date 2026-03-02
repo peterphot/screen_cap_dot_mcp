@@ -167,7 +167,7 @@ export class FlowRunner {
           result.a11yPath = a11yPath;
         }
       } catch (err) {
-        result.error = (err as Error).message;
+        result.error = err instanceof Error ? err.message : String(err);
         logger.warn(`Step ${i} (${step.action}) failed: ${result.error}`);
 
         // Capture error screenshot
@@ -267,7 +267,8 @@ export class FlowRunner {
         break;
 
       case "screenshot": {
-        const label = step.label ?? `step-${stepIndex}-screenshot`;
+        const rawLabel = step.label ?? `step-${stepIndex}-screenshot`;
+        const label = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
         const screenshotPath = join(outputDir, `${label}.png`);
         if (step.selector) {
           const el = await page.$(step.selector);
@@ -282,7 +283,8 @@ export class FlowRunner {
       }
 
       case "a11y_snapshot": {
-        const label = step.label ?? `step-${stepIndex}-a11y`;
+        const rawLabel = step.label ?? `step-${stepIndex}-a11y`;
+        const label = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
         const a11yPath = join(outputDir, `${label}.json`);
         const snapshot = await page.accessibility.snapshot({
           interestingOnly: step.interestingOnly ?? true,
@@ -328,6 +330,9 @@ export class FlowRunner {
         break;
 
       case "function":
+        if (process.env.ALLOW_EVALUATE !== "true") {
+          throw new Error("wait/function is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution.");
+        }
         await page.waitForFunction(step.function, { timeout });
         break;
     }

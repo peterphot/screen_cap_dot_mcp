@@ -189,7 +189,7 @@ export function registerNavigationTools(server: McpServer): void {
     { script: z.string() },
     async ({ script }) => {
       try {
-        if (process.env.ALLOW_EVALUATE === "false") {
+        if (process.env.ALLOW_EVALUATE !== "true") {
           return {
             content: [{ type: "text" as const, text: "Error: browser_evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution." }],
             isError: true,

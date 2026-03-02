@@ -301,7 +301,9 @@ describe("FlowRunner", () => {
     expect(mockPage.waitForNetworkIdle).toHaveBeenCalledWith({ timeout: 30000 });
   });
 
-  it("executes wait/function step", async () => {
+  it("executes wait/function step when ALLOW_EVALUATE=true", async () => {
+    process.env.ALLOW_EVALUATE = "true";
+
     const flow: FlowDefinition = {
       name: "wait-fn",
       steps: [{ action: "wait", strategy: "function", function: "() => true" }],
@@ -310,6 +312,21 @@ describe("FlowRunner", () => {
     await runner.run(flow);
 
     expect(mockPage.waitForFunction).toHaveBeenCalledWith("() => true", { timeout: 30000 });
+  });
+
+  it("blocks wait/function step when ALLOW_EVALUATE is not set", async () => {
+    delete process.env.ALLOW_EVALUATE;
+
+    const flow: FlowDefinition = {
+      name: "wait-fn-blocked",
+      steps: [{ action: "wait", strategy: "function", function: "() => true" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("wait/function is disabled");
+    expect(mockPage.waitForFunction).not.toHaveBeenCalled();
   });
 
   it("executes scroll step", async () => {

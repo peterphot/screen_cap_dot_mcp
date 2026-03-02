@@ -38,37 +38,37 @@ const WaitSelectorStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("selector"),
   selector: z.string(),
-  timeout: z.number().optional(),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
 
 const WaitNetworkIdleStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("network_idle"),
-  timeout: z.number().optional(),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
 
 const WaitSmartStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("smart"),
-  timeout: z.number().optional(),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
 
 const WaitDelayStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("delay"),
-  delay: z.number(),
-  timeout: z.number().optional(),
+  delay: z.number().nonnegative().finite().max(300_000),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
 
 const WaitFunctionStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("function"),
-  function: z.string(),
-  timeout: z.number().optional(),
+  function: z.string().min(1),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
 
@@ -83,7 +83,7 @@ const WaitStep = z.union([
 const ScrollStep = z.object({
   action: z.literal("scroll"),
   direction: z.enum(["up", "down", "left", "right"]).optional(),
-  amount: z.number().optional(),
+  amount: z.number().nonnegative().finite().max(100_000).optional(),
   selector: z.string().optional(),
   label: z.string().optional(),
 });
@@ -103,13 +103,13 @@ const A11ySnapshotStep = z.object({
 
 const EvaluateStep = z.object({
   action: z.literal("evaluate"),
-  script: z.string(),
+  script: z.string().min(1),
   label: z.string().optional(),
 });
 
 const SleepStep = z.object({
   action: z.literal("sleep"),
-  duration: z.number(),
+  duration: z.number().nonnegative().finite().max(300_000),
   label: z.string().optional(),
 });
 
@@ -119,11 +119,7 @@ export const FlowStepSchema = z.union([
   NavigateStep,
   ClickStep,
   TypeStep,
-  WaitSelectorStep,
-  WaitNetworkIdleStep,
-  WaitSmartStep,
-  WaitDelayStep,
-  WaitFunctionStep,
+  WaitStep,
   ScrollStep,
   ScreenshotStep,
   A11ySnapshotStep,
