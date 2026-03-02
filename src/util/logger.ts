@@ -28,6 +28,7 @@ export function resetLogLevel(): void {
   currentLevel = "info";
 }
 
+
 function shouldLog(level: LogLevel): boolean {
   return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
 }

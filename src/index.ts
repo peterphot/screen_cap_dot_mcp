@@ -13,6 +13,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import logger from "./util/logger.js";
 import { registerNavigationTools } from "./tools/navigation.js";
 import { registerObservationTools } from "./tools/observation.js";
+import { registerWaitingTools } from "./tools/waiting.js";
+import { registerScrollingTools } from "./tools/scrolling.js";
 
 // ── Server Setup ────────────────────────────────────────────────────────
 
@@ -25,6 +27,8 @@ const server = new McpServer({
 
 registerNavigationTools(server);
 registerObservationTools(server);
+registerWaitingTools(server);
+registerScrollingTools(server);
 
 // ── Start Server ────────────────────────────────────────────────────────
 
