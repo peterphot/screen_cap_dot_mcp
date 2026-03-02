@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import logger from "./util/logger.js";
 import { registerNavigationTools } from "./tools/navigation.js";
+import { registerObservationTools } from "./tools/observation.js";
 
 // ── Server Setup ────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ const server = new McpServer({
 // ── Register Tool Groups ────────────────────────────────────────────────
 
 registerNavigationTools(server);
+registerObservationTools(server);
 
 // ── Start Server ────────────────────────────────────────────────────────
 

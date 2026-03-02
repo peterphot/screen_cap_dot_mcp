@@ -174,6 +174,7 @@ describe("browser_navigate", () => {
       waitUntil: "load",
       timeout: DEFAULT_TIMEOUT_MS,
     });
+    // Verify we pass parsed.href (not raw input) to page.goto
     expect(result.content[0].text).toContain("https://example.com/page");
     expect(result.content[0].text).toContain("Page Title");
   });
@@ -185,7 +186,7 @@ describe("browser_navigate", () => {
       { signal: new AbortController().signal },
     );
 
-    expect(mockPage.goto).toHaveBeenCalledWith("https://example.com", {
+    expect(mockPage.goto).toHaveBeenCalledWith("https://example.com/", {
       waitUntil: "networkidle2",
       timeout: DEFAULT_TIMEOUT_MS,
     });
@@ -201,6 +202,42 @@ describe("browser_navigate", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Navigation timeout");
+  });
+
+  it("rejects file:// URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "file:///etc/passwd" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects javascript: URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "javascript:alert(1)" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "not-a-valid-url" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Invalid URL");
+    expect(mockPage.goto).not.toHaveBeenCalled();
   });
 });
 
@@ -330,6 +367,28 @@ describe("browser_evaluate", () => {
     expect(result.content[0].type).toBe("text");
     // Should not throw, even with undefined result
     expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error when ALLOW_EVALUATE=false", async () => {
+    const original = process.env.ALLOW_EVALUATE;
+    process.env.ALLOW_EVALUATE = "false";
+    try {
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "1+1" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("browser_evaluate is disabled");
+      expect(mockPage.evaluate).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
   });
 
   it("returns error text when script throws", async () => {
