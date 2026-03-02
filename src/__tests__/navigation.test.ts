@@ -361,29 +361,71 @@ describe("browser_select", () => {
 
 describe("browser_evaluate", () => {
   it("evaluates JS script and returns JSON-stringified result", async () => {
-    mockPage.evaluate.mockResolvedValue({ count: 42 });
-    const handler = getToolHandler(server, "browser_evaluate");
-    const result = await handler(
-      { script: "document.querySelectorAll('div').length" },
-      { signal: new AbortController().signal },
-    );
+    const original = process.env.ALLOW_EVALUATE;
+    process.env.ALLOW_EVALUATE = "true";
+    try {
+      mockPage.evaluate.mockResolvedValue({ count: 42 });
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "document.querySelectorAll('div').length" },
+        { signal: new AbortController().signal },
+      );
 
-    expect(mockEnsurePage).toHaveBeenCalled();
-    expect(mockPage.evaluate).toHaveBeenCalled();
-    expect(result.content[0].text).toContain(JSON.stringify({ count: 42 }));
+      expect(mockEnsurePage).toHaveBeenCalled();
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(result.content[0].text).toContain(JSON.stringify({ count: 42 }));
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
   });
 
   it("handles undefined/null evaluate results", async () => {
-    mockPage.evaluate.mockResolvedValue(undefined);
-    const handler = getToolHandler(server, "browser_evaluate");
-    const result = await handler(
-      { script: "void 0" },
-      { signal: new AbortController().signal },
-    );
+    const original = process.env.ALLOW_EVALUATE;
+    process.env.ALLOW_EVALUATE = "true";
+    try {
+      mockPage.evaluate.mockResolvedValue(undefined);
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "void 0" },
+        { signal: new AbortController().signal },
+      );
 
-    expect(result.content[0].type).toBe("text");
-    // Should not throw, even with undefined result
-    expect(result.isError).toBeFalsy();
+      expect(result.content[0].type).toBe("text");
+      // Should not throw, even with undefined result
+      expect(result.isError).toBeFalsy();
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
+  });
+
+  it("returns error when ALLOW_EVALUATE is not set (default-deny)", async () => {
+    const original = process.env.ALLOW_EVALUATE;
+    delete process.env.ALLOW_EVALUATE;
+    try {
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "1+1" },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("browser_evaluate is disabled");
+      expect(mockPage.evaluate).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
   });
 
   it("returns error when ALLOW_EVALUATE=false", async () => {
@@ -409,15 +451,25 @@ describe("browser_evaluate", () => {
   });
 
   it("returns error text when script throws", async () => {
-    mockPage.evaluate.mockRejectedValue(new Error("ReferenceError: x is not defined"));
-    const handler = getToolHandler(server, "browser_evaluate");
-    const result = await handler(
-      { script: "x.y.z" },
-      { signal: new AbortController().signal },
-    );
+    const original = process.env.ALLOW_EVALUATE;
+    process.env.ALLOW_EVALUATE = "true";
+    try {
+      mockPage.evaluate.mockRejectedValue(new Error("ReferenceError: x is not defined"));
+      const handler = getToolHandler(server, "browser_evaluate");
+      const result = await handler(
+        { script: "x.y.z" },
+        { signal: new AbortController().signal },
+      );
 
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("ReferenceError");
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("ReferenceError");
+    } finally {
+      if (original === undefined) {
+        delete process.env.ALLOW_EVALUATE;
+      } else {
+        process.env.ALLOW_EVALUATE = original;
+      }
+    }
   });
 });
 
