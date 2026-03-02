@@ -26,10 +26,10 @@ export function registerWaitingTools(server: McpServer): void {
     "browser_wait_for_selector",
     "Wait for an element to appear (visible) or disappear (hidden) on the page by CSS selector.",
     {
-      selector: z.string(),
-      visible: z.boolean().optional(),
-      hidden: z.boolean().optional(),
-      timeout: z.number().optional(),
+      selector: z.string().describe("CSS selector to wait for"),
+      visible: z.boolean().optional().describe("Wait until the element is visible"),
+      hidden: z.boolean().optional().describe("Wait until the element is hidden"),
+      timeout: z.number().optional().describe("Maximum wait time in ms (default: 30000)"),
     },
     async ({ selector, visible, hidden, timeout }) => {
       try {
@@ -78,14 +78,14 @@ export function registerWaitingTools(server: McpServer): void {
     "browser_wait_for_network_idle",
     "Wait for network activity to settle (no in-flight requests for the specified idle time).",
     {
-      timeout: z.number().optional(),
-      idleTime: z.number().optional(),
+      timeout: z.number().optional().describe("Maximum wait time in ms (default: 30000)"),
+      idleTime: z.number().optional().describe("Required idle duration in ms with no requests (default: 500)"),
     },
     async ({ timeout, idleTime }) => {
       try {
         const page = await ensurePage();
         const effectiveTimeout = timeout ?? 30000;
-        const effectiveIdleTime = idleTime || 500;
+        const effectiveIdleTime = idleTime ?? 500;
 
         await page.waitForNetworkIdle({
           idleTime: effectiveIdleTime,
@@ -120,7 +120,7 @@ export function registerWaitingTools(server: McpServer): void {
     "browser_smart_wait",
     "Multi-strategy intelligent wait: checks for loading indicators (progress bars, skeletons, spinners) and waits for network idle.",
     {
-      timeout: z.number().optional(),
+      timeout: z.number().optional().describe("Maximum wait time in ms (default: 30000)"),
     },
     async ({ timeout }) => {
       try {
