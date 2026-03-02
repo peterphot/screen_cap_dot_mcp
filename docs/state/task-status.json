@@ -1,0 +1,19 @@
+{
+  "feature": "pp-3-browsermanager-singleton",
+  "tickets": {
+    "enabled": true,
+    "type": "linear",
+    "team": "Engineering",
+    "sourceTicket": "PP-3",
+    "mapping": {
+      "T001": { "ticketId": "PP-3", "identifier": "PP-3" },
+      "T002": { "ticketId": "PP-3", "identifier": "PP-3" },
+      "T003": { "ticketId": "PP-3", "identifier": "PP-3" }
+    }
+  },
+  "tasks": {
+    "T001": { "status": "complete", "description": "Setup vitest test framework" },
+    "T002": { "status": "complete", "description": "Write failing tests for BrowserManager (26 tests)" },
+    "T003": { "status": "complete", "description": "Implement src/browser.ts -- all 26 tests passing" }
+  }
+}
