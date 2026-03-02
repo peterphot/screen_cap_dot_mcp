@@ -1,0 +1,356 @@
+/**
+ * Unit tests for observation tools (src/tools/observation.ts)
+ *
+ * All browser module interactions are mocked. These tests verify:
+ * - All 4 tools are registered on the McpServer with correct names/descriptions/schemas
+ * - browser_screenshot returns image content block (viewport, fullPage, selector, savePath)
+ * - browser_a11y_snapshot returns parseable JSON accessibility tree
+ * - browser_get_page_info returns URL, title, viewport, and scroll dimensions
+ * - browser_get_text returns element innerText
+ * - Error paths catch exceptions and return error text with isError: true (never throw)
+ */
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+// ── Mock Setup ──────────────────────────────────────────────────────────
+
+// Mock the browser module
+const mockEnsurePage = vi.fn();
+
+vi.mock("../browser.js", () => ({
+  ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
+}));
+
+// Mock node:fs/promises for savePath tests
+const mockWriteFile = vi.fn();
+const mockMkdir = vi.fn();
+
+vi.mock("node:fs/promises", () => ({
+  writeFile: (...args: unknown[]) => mockWriteFile(...args),
+  mkdir: (...args: unknown[]) => mockMkdir(...args),
+}));
+
+// Mock page object used by tools
+interface MockElement {
+  screenshot: ReturnType<typeof vi.fn>;
+}
+
+interface MockPage {
+  url: ReturnType<typeof vi.fn>;
+  title: ReturnType<typeof vi.fn>;
+  screenshot: ReturnType<typeof vi.fn>;
+  viewport: ReturnType<typeof vi.fn>;
+  evaluate: ReturnType<typeof vi.fn>;
+  $: ReturnType<typeof vi.fn>;
+  $eval: ReturnType<typeof vi.fn>;
+  accessibility: {
+    snapshot: ReturnType<typeof vi.fn>;
+  };
+}
+
+let mockPage: MockPage;
+let mockElement: MockElement;
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+// Internal type for accessing McpServer's private _registeredTools (plain object, not Map)
+type RegisteredToolsMap = Record<string, { handler: Function; description?: string }>;
+
+/**
+ * Extract the registered tool handler from a McpServer instance.
+ */
+function getToolHandler(server: McpServer, toolName: string) {
+  const tools = (server as unknown as { _registeredTools: RegisteredToolsMap })
+    ._registeredTools;
+  const tool = tools[toolName];
+  if (!tool) {
+    throw new Error(`Tool "${toolName}" not registered on server`);
+  }
+  return tool.handler;
+}
+
+function getRegisteredTools(server: McpServer): RegisteredToolsMap {
+  return (server as unknown as { _registeredTools: RegisteredToolsMap })._registeredTools;
+}
+
+// ── Setup ───────────────────────────────────────────────────────────────
+
+let server: McpServer;
+
+// Base64 PNG stub (1x1 transparent pixel)
+const FAKE_SCREENSHOT_BUFFER = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGP6/x8AAwAB/auKfQAAAABJRU5ErkJggg==", "base64");
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+
+  mockElement = {
+    screenshot: vi.fn().mockResolvedValue(FAKE_SCREENSHOT_BUFFER),
+  };
+
+  mockPage = {
+    url: vi.fn().mockReturnValue("https://example.com/page"),
+    title: vi.fn().mockResolvedValue("Example Page"),
+    screenshot: vi.fn().mockResolvedValue(FAKE_SCREENSHOT_BUFFER),
+    viewport: vi.fn().mockReturnValue({ width: 1280, height: 720 }),
+    evaluate: vi.fn().mockResolvedValue({ scrollWidth: 1280, scrollHeight: 3000 }),
+    $: vi.fn().mockResolvedValue(mockElement),
+    $eval: vi.fn().mockResolvedValue("Hello World"),
+    accessibility: {
+      snapshot: vi.fn().mockResolvedValue({
+        role: "WebArea",
+        name: "Example Page",
+        children: [
+          { role: "heading", name: "Welcome", level: 1 },
+          { role: "link", name: "Click me" },
+        ],
+      }),
+    },
+  };
+
+  mockEnsurePage.mockResolvedValue(mockPage);
+  mockWriteFile.mockResolvedValue(undefined);
+  mockMkdir.mockResolvedValue(undefined);
+
+  // Create a fresh server and register tools for each test
+  server = new McpServer({ name: "test-server", version: "1.0.0" });
+  const { registerObservationTools } = await import("../tools/observation.js");
+  registerObservationTools(server);
+});
+
+// ── Tool Registration ───────────────────────────────────────────────────
+
+describe("registerObservationTools", () => {
+  it("registers all 4 tools on the server", () => {
+    const tools = getRegisteredTools(server);
+    const toolNames = Object.keys(tools);
+
+    expect(toolNames).toContain("browser_screenshot");
+    expect(toolNames).toContain("browser_a11y_snapshot");
+    expect(toolNames).toContain("browser_get_page_info");
+    expect(toolNames).toContain("browser_get_text");
+  });
+
+  it("each tool has a description", () => {
+    const tools = getRegisteredTools(server);
+    const observationTools = ["browser_screenshot", "browser_a11y_snapshot", "browser_get_page_info", "browser_get_text"];
+
+    for (const name of observationTools) {
+      expect(tools[name].description, `Tool "${name}" should have a description`).toBeTruthy();
+    }
+  });
+});
+
+// ── browser_screenshot ──────────────────────────────────────────────────
+
+describe("browser_screenshot", () => {
+  it("takes a viewport screenshot by default and returns image content block", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.screenshot).toHaveBeenCalled();
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("image");
+    expect(result.content[0].mimeType).toBe("image/png");
+    expect(typeof result.content[0].data).toBe("string");
+    // data should be valid base64
+    expect(result.content[0].data.length).toBeGreaterThan(0);
+  });
+
+  it("passes fullPage option to page.screenshot", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    await handler({ fullPage: true }, { signal: new AbortController().signal });
+
+    expect(mockPage.screenshot).toHaveBeenCalledWith(
+      expect.objectContaining({ fullPage: true }),
+    );
+  });
+
+  it("screenshots a specific element when selector is provided", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { selector: "#main-content" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.$).toHaveBeenCalledWith("#main-content");
+    expect(mockElement.screenshot).toHaveBeenCalled();
+    expect(result.content[0].type).toBe("image");
+    expect(result.content[0].mimeType).toBe("image/png");
+  });
+
+  it("returns error when selector element is not found", async () => {
+    mockPage.$.mockResolvedValue(null);
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { selector: "#nonexistent" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("#nonexistent");
+  });
+
+  it("saves screenshot to disk when savePath is provided", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { savePath: "/tmp/screenshots/test.png" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockMkdir).toHaveBeenCalledWith(
+      expect.stringContaining("/tmp/screenshots"),
+      expect.objectContaining({ recursive: true }),
+    );
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      "/tmp/screenshots/test.png",
+      expect.any(Buffer),
+    );
+    // Should still return the image content block
+    expect(result.content[0].type).toBe("image");
+  });
+
+  it("returns error text when screenshot fails (does not throw)", async () => {
+    mockPage.screenshot.mockRejectedValue(new Error("Page crashed"));
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Page crashed");
+  });
+
+  it("returns error text when savePath write fails", async () => {
+    mockWriteFile.mockRejectedValue(new Error("Permission denied"));
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { savePath: "/readonly/test.png" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Permission denied");
+  });
+});
+
+// ── browser_a11y_snapshot ───────────────────────────────────────────────
+
+describe("browser_a11y_snapshot", () => {
+  it("returns JSON accessibility tree with interestingOnly true by default", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.accessibility.snapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ interestingOnly: true }),
+    );
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+
+    // Result should be parseable JSON
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.role).toBe("WebArea");
+    expect(parsed.children).toHaveLength(2);
+  });
+
+  it("passes interestingOnly false when explicitly set", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    await handler(
+      { interestingOnly: false },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.accessibility.snapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ interestingOnly: false }),
+    );
+  });
+
+  it("returns error text when a11y snapshot fails (does not throw)", async () => {
+    mockPage.accessibility.snapshot.mockRejectedValue(new Error("Accessibility not available"));
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Accessibility not available");
+  });
+});
+
+// ── browser_get_page_info ───────────────────────────────────────────────
+
+describe("browser_get_page_info", () => {
+  it("returns URL, title, viewport dimensions, and scroll dimensions", async () => {
+    const handler = getToolHandler(server, "browser_get_page_info");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+
+    const text = result.content[0].text;
+    expect(text).toContain("https://example.com/page");
+    expect(text).toContain("Example Page");
+    expect(text).toContain("1280");
+    expect(text).toContain("720");
+    expect(text).toContain("3000");
+  });
+
+  it("handles null viewport gracefully", async () => {
+    mockPage.viewport.mockReturnValue(null);
+    const handler = getToolHandler(server, "browser_get_page_info");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(result.content[0].type).toBe("text");
+    expect(result.isError).toBeFalsy();
+    // Should still contain URL and title even without viewport
+    expect(result.content[0].text).toContain("https://example.com/page");
+    expect(result.content[0].text).toContain("Example Page");
+  });
+
+  it("returns error text when page info fails (does not throw)", async () => {
+    mockEnsurePage.mockRejectedValue(new Error("Not connected"));
+    const handler = getToolHandler(server, "browser_get_page_info");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Not connected");
+  });
+});
+
+// ── browser_get_text ────────────────────────────────────────────────────
+
+describe("browser_get_text", () => {
+  it("returns innerText of the specified element", async () => {
+    const handler = getToolHandler(server, "browser_get_text");
+    const result = await handler(
+      { selector: "#content" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.$eval).toHaveBeenCalledWith(
+      "#content",
+      expect.any(Function),
+    );
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toBe("Hello World");
+  });
+
+  it("returns error text when selector is not found (does not throw)", async () => {
+    mockPage.$eval.mockRejectedValue(new Error("Element not found for selector: #missing"));
+    const handler = getToolHandler(server, "browser_get_text");
+    const result = await handler(
+      { selector: "#missing" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("#missing");
+  });
+});

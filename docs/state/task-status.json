@@ -1,21 +1,19 @@
 {
-  "feature": "pp-4-mcp-server-skeleton-and-navigation-tools",
+  "feature": "pp-5-observation-tools",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-4",
+    "sourceTicket": "PP-5",
     "mapping": {
-      "T001": { "ticketId": "PP-4", "identifier": "PP-4" },
-      "T002": { "ticketId": "PP-4", "identifier": "PP-4" },
-      "T003": { "ticketId": "PP-4", "identifier": "PP-4" },
-      "T004": { "ticketId": "PP-4", "identifier": "PP-4" }
+      "T001": { "ticketId": "PP-5", "identifier": "PP-5" },
+      "T002": { "ticketId": "PP-5", "identifier": "PP-5" },
+      "T003": { "ticketId": "PP-5", "identifier": "PP-5" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write 21 failing tests for 8 navigation tools" },
-    "T002": { "status": "complete", "description": "Implement registerNavigationTools with all 8 tools - 21 tests passing" },
-    "T003": { "status": "complete", "description": "Update src/index.ts with McpServer setup, tool registration, StdioServerTransport" },
-    "T004": { "status": "complete", "description": "TypeScript compiles cleanly, all 47 tests pass (26 browser + 21 navigation)" }
+    "T001": { "status": "complete", "description": "Write 17 failing tests for 4 observation tools" },
+    "T002": { "status": "complete", "description": "Implement registerObservationTools with all 4 tools - 17 tests passing" },
+    "T003": { "status": "complete", "description": "Register observation tools in src/index.ts, TypeScript compiles cleanly, 64 tests pass" }
   }
 }
