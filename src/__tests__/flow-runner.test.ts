@@ -373,6 +373,8 @@ describe("FlowRunner", () => {
   });
 
   it("executes evaluate step", async () => {
+    process.env.ALLOW_EVALUATE = "true";
+
     const flow: FlowDefinition = {
       name: "eval-test",
       steps: [{ action: "evaluate", script: "document.title" }],
@@ -447,28 +449,22 @@ describe("FlowRunner", () => {
     expect(result.steps[0].a11yPath).toContain("homepage");
   });
 
-  it("wait/selector throws when selector field is missing", async () => {
-    const flow: FlowDefinition = {
-      name: "wait-no-selector",
-      steps: [{ action: "wait", strategy: "selector" }],
-    };
-
-    const result = await runner.run(flow);
-
-    expect(result.steps[0].success).toBe(false);
-    expect(result.steps[0].error).toContain("requires a selector");
+  it("wait/selector requires selector at schema level", async () => {
+    // This is now enforced by the schema — FlowDefinitionSchema rejects it.
+    // The runner won't encounter this case with validated input.
+    const result = (await import("../flow/schema.js")).FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "selector",
+    });
+    expect(result.success).toBe(false);
   });
 
-  it("wait/function throws when function field is missing", async () => {
-    const flow: FlowDefinition = {
-      name: "wait-no-fn",
-      steps: [{ action: "wait", strategy: "function" }],
-    };
-
-    const result = await runner.run(flow);
-
-    expect(result.steps[0].success).toBe(false);
-    expect(result.steps[0].error).toContain("requires a function");
+  it("wait/function requires function at schema level", async () => {
+    const result = (await import("../flow/schema.js")).FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "function",
+    });
+    expect(result.success).toBe(false);
   });
 
   it("reports total duration", async () => {
@@ -573,8 +569,8 @@ describe("URL validation", () => {
 describe("ALLOW_EVALUATE guard", () => {
   const runner = new FlowRunner();
 
-  it("blocks evaluate when ALLOW_EVALUATE=false", async () => {
-    process.env.ALLOW_EVALUATE = "false";
+  it("blocks evaluate when ALLOW_EVALUATE is not set", async () => {
+    delete process.env.ALLOW_EVALUATE;
 
     const flow: FlowDefinition = {
       name: "eval-blocked",
@@ -588,7 +584,24 @@ describe("ALLOW_EVALUATE guard", () => {
     expect(mockPage.evaluate).not.toHaveBeenCalled();
   });
 
-  it("allows evaluate when ALLOW_EVALUATE is not set", async () => {
+  it("blocks evaluate when ALLOW_EVALUATE=false", async () => {
+    process.env.ALLOW_EVALUATE = "false";
+
+    const flow: FlowDefinition = {
+      name: "eval-blocked-false",
+      steps: [{ action: "evaluate", script: "document.title" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("evaluate is disabled");
+    expect(mockPage.evaluate).not.toHaveBeenCalled();
+  });
+
+  it("allows evaluate when ALLOW_EVALUATE=true", async () => {
+    process.env.ALLOW_EVALUATE = "true";
+
     const flow: FlowDefinition = {
       name: "eval-allowed",
       steps: [{ action: "evaluate", script: "document.title" }],

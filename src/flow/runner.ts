@@ -292,7 +292,7 @@ export class FlowRunner {
       }
 
       case "evaluate":
-        if (process.env.ALLOW_EVALUATE === "false") {
+        if (process.env.ALLOW_EVALUATE !== "true") {
           throw new Error("evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution.");
         }
         await page.evaluate(step.script);
@@ -312,7 +312,6 @@ export class FlowRunner {
 
     switch (step.strategy) {
       case "selector":
-        if (!step.selector) throw new Error("wait/selector requires a selector field");
         await page.waitForSelector(step.selector, { visible: true, timeout });
         break;
 
@@ -325,11 +324,10 @@ export class FlowRunner {
         break;
 
       case "delay":
-        await new Promise((resolve) => setTimeout(resolve, step.delay ?? 1000));
+        await new Promise((resolve) => setTimeout(resolve, step.delay));
         break;
 
       case "function":
-        if (!step.function) throw new Error("wait/function requires a function field");
         await page.waitForFunction(step.function, { timeout });
         break;
     }

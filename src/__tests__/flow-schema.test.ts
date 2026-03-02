@@ -135,6 +135,30 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects wait/selector without selector field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "selector",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects wait/function without function field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "function",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects wait/delay without delay field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "delay",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("RecordingConfigSchema", () => {
@@ -174,7 +198,7 @@ describe("FlowDefinitionSchema", () => {
       description: "Navigate to Channel ROI and capture visualizations",
       recording: { enabled: true, format: "mp4" },
       steps: [
-        { action: "navigate", url: "/channel-roi", label: "nav-channel-roi" },
+        { action: "navigate", url: "https://app.example.com/channel-roi", label: "nav-channel-roi" },
         { action: "wait", strategy: "smart", timeout: 45000 },
         { action: "screenshot", label: "channel-roi-loaded" },
         { action: "scroll", direction: "down", amount: 800 },

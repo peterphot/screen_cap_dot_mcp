@@ -34,15 +34,51 @@ const TypeStep = z.object({
   label: z.string().optional(),
 });
 
-const WaitStep = z.object({
+const WaitSelectorStep = z.object({
   action: z.literal("wait"),
-  strategy: z.enum(["selector", "network_idle", "smart", "delay", "function"]),
-  selector: z.string().optional(),
+  strategy: z.literal("selector"),
+  selector: z.string(),
   timeout: z.number().optional(),
-  delay: z.number().optional(),
-  function: z.string().optional(),
   label: z.string().optional(),
 });
+
+const WaitNetworkIdleStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("network_idle"),
+  timeout: z.number().optional(),
+  label: z.string().optional(),
+});
+
+const WaitSmartStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("smart"),
+  timeout: z.number().optional(),
+  label: z.string().optional(),
+});
+
+const WaitDelayStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("delay"),
+  delay: z.number(),
+  timeout: z.number().optional(),
+  label: z.string().optional(),
+});
+
+const WaitFunctionStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("function"),
+  function: z.string(),
+  timeout: z.number().optional(),
+  label: z.string().optional(),
+});
+
+const WaitStep = z.union([
+  WaitSelectorStep,
+  WaitNetworkIdleStep,
+  WaitSmartStep,
+  WaitDelayStep,
+  WaitFunctionStep,
+]);
 
 const ScrollStep = z.object({
   action: z.literal("scroll"),
@@ -79,11 +115,15 @@ const SleepStep = z.object({
 
 // ── Discriminated union of all steps ─────────────────────────────────────
 
-export const FlowStepSchema = z.discriminatedUnion("action", [
+export const FlowStepSchema = z.union([
   NavigateStep,
   ClickStep,
   TypeStep,
-  WaitStep,
+  WaitSelectorStep,
+  WaitNetworkIdleStep,
+  WaitSmartStep,
+  WaitDelayStep,
+  WaitFunctionStep,
   ScrollStep,
   ScreenshotStep,
   A11ySnapshotStep,
