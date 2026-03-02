@@ -7,8 +7,8 @@
  * - browser_screenshot_key_moment: Capture labeled moment during recording
  *
  * Uses Puppeteer v24's page.screencast() API which requires ffmpeg.
- * Recording state (active recorder, path, key moments) is tracked at
- * module level so it persists across tool calls.
+ * Recording state is managed in ../recording-state.ts to avoid circular
+ * imports between this module and browser.ts.
  *
  * All handlers wrap their logic in try/catch and return error messages
  * as text content (never throw).
@@ -18,9 +18,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { mkdir, writeFile, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import type { ScreenRecorder } from "puppeteer-core";
 import { ensurePage } from "../browser.js";
 import logger from "../util/logger.js";
+import {
+  recState,
+  cleanupRecordingState,
+  MAX_KEY_MOMENTS,
+} from "../recording-state.js";
 
 // ── Path confinement ─────────────────────────────────────────────────────
 
@@ -28,9 +32,15 @@ import logger from "../util/logger.js";
  * Read the allowed recording output directory.
  * Read lazily so env var changes and test overrides take effect.
  * Defaults to /tmp/screen-cap-recordings.
+ * Rejects filesystem root or empty values to prevent vacuous confinement.
  */
 function getRecordingDir(): string {
-  return resolve(process.env.RECORDING_DIR ?? "/tmp/screen-cap-recordings");
+  const raw = process.env.RECORDING_DIR ?? "/tmp/screen-cap-recordings";
+  const resolved = resolve(raw);
+  if (resolved === "/") {
+    throw new Error("RECORDING_DIR must not resolve to the filesystem root.");
+  }
+  return resolved;
 }
 
 /**
@@ -67,42 +77,7 @@ async function confinePathToRecordingDir(
   return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
 }
 
-// ── Module-level recording state ────────────────────────────────────────
-
-let activeRecorder: ScreenRecorder | null = null;
-let recordingPath: string = "";
-let keyMoments: Array<{
-  label: string;
-  timestamp: number;
-  screenshotPath: string;
-  a11yPath?: string;
-}> = [];
-let recordingStartTime: number = 0;
-
-/** Promise guard to prevent concurrent start attempts. */
-let startPromise: Promise<unknown> | null = null;
-
-/** Maximum number of key moments per recording. */
-const MAX_KEY_MOMENTS = 100;
-
-/**
- * Clear all module-level recording state.
- * Called on stop, error recovery, and browser disconnect.
- */
-export function cleanupRecordingState(): void {
-  activeRecorder = null;
-  recordingPath = "";
-  keyMoments = [];
-  recordingStartTime = 0;
-  startPromise = null;
-}
-
-/**
- * Check whether a recording is currently active.
- */
-export function isRecordingActive(): boolean {
-  return activeRecorder !== null;
-}
+// ── Tool registration ───────────────────────────────────────────────────
 
 /**
  * Register all recording tools on the given MCP server.
@@ -120,7 +95,7 @@ export function registerRecordingTools(server: McpServer): void {
     async ({ outputPath, format }) => {
       try {
         // Prevent double-start
-        if (activeRecorder) {
+        if (recState.recorder) {
           return {
             content: [
               {
@@ -133,7 +108,7 @@ export function registerRecordingTools(server: McpServer): void {
         }
 
         // Concurrency guard: prevent overlapping start attempts
-        if (startPromise) {
+        if (recState.startPromise) {
           return {
             content: [
               {
@@ -189,10 +164,10 @@ export function registerRecordingTools(server: McpServer): void {
           });
 
           // Store state
-          activeRecorder = recorder;
-          recordingPath = effectivePath;
-          keyMoments = [];
-          recordingStartTime = Date.now();
+          recState.recorder = recorder;
+          recState.path = effectivePath;
+          recState.keyMoments = [];
+          recState.startTime = Date.now();
 
           logger.info(`Recording started: ${effectivePath}`);
 
@@ -206,20 +181,20 @@ export function registerRecordingTools(server: McpServer): void {
           };
         };
 
-        startPromise = doStart();
+        recState.startPromise = doStart();
         try {
-          return await (startPromise as Promise<{
+          return await (recState.startPromise as Promise<{
             content: Array<{ type: "text"; text: string }>;
             isError?: boolean;
           }>);
         } finally {
-          startPromise = null;
+          recState.startPromise = null;
         }
       } catch (err) {
         // Defensive cleanup: if recorder was started but subsequent logic failed
-        if (activeRecorder) {
+        if (recState.recorder) {
           try {
-            await activeRecorder.stop();
+            await recState.recorder.stop();
           } catch {
             /* best-effort */
           }
@@ -247,7 +222,7 @@ export function registerRecordingTools(server: McpServer): void {
     {},
     async () => {
       try {
-        if (!activeRecorder) {
+        if (!recState.recorder) {
           return {
             content: [
               {
@@ -260,17 +235,17 @@ export function registerRecordingTools(server: McpServer): void {
         }
 
         // Stop the recorder
-        await activeRecorder.stop();
+        await recState.recorder.stop();
 
         // Calculate duration
-        const durationMs = Date.now() - recordingStartTime;
+        const durationMs = Date.now() - recState.startTime;
         const durationSec = (durationMs / 1000).toFixed(1);
 
         // Build result
         const momentsText =
-          keyMoments.length > 0
-            ? `\nKey moments (${keyMoments.length}):\n` +
-              keyMoments
+          recState.keyMoments.length > 0
+            ? `\nKey moments (${recState.keyMoments.length}):\n` +
+              recState.keyMoments
                 .map(
                   (m) =>
                     `  - "${m.label}" at ${(m.timestamp / 1000).toFixed(1)}s → ${m.screenshotPath}${m.a11yPath ? ` (a11y: ${m.a11yPath})` : ""}`,
@@ -278,7 +253,7 @@ export function registerRecordingTools(server: McpServer): void {
                 .join("\n")
             : "\nNo key moments captured.";
 
-        const path = recordingPath;
+        const path = recState.path;
 
         // Clear state
         cleanupRecordingState();
@@ -320,7 +295,7 @@ export function registerRecordingTools(server: McpServer): void {
     },
     async ({ label }) => {
       try {
-        if (!activeRecorder) {
+        if (!recState.recorder) {
           return {
             content: [
               {
@@ -332,7 +307,7 @@ export function registerRecordingTools(server: McpServer): void {
           };
         }
 
-        if (keyMoments.length >= MAX_KEY_MOMENTS) {
+        if (recState.keyMoments.length >= MAX_KEY_MOMENTS) {
           return {
             content: [
               {
@@ -345,7 +320,7 @@ export function registerRecordingTools(server: McpServer): void {
         }
 
         const page = await ensurePage();
-        const timestamp = Date.now() - recordingStartTime;
+        const timestamp = Date.now() - recState.startTime;
         const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
         const filePrefix = `${Date.now()}-${safeLabel}`;
 
@@ -383,7 +358,7 @@ export function registerRecordingTools(server: McpServer): void {
         ]);
 
         // Add to key moments
-        keyMoments.push({
+        recState.keyMoments.push({
           label,
           timestamp,
           screenshotPath: screenshotResult,

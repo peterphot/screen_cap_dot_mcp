@@ -16,7 +16,7 @@
 
 import puppeteer, { type Browser, type Page, type CDPSession } from "puppeteer-core";
 import logger from "./util/logger.js";
-import { cleanupRecordingState } from "./tools/recording.js";
+import { cleanupRecordingState } from "./recording-state.js";
 
 // ── Types ───────────────────────────────────────────────────────────────
 

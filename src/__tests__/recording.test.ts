@@ -591,7 +591,7 @@ describe("cleanupRecordingState", () => {
     await startHandler({}, { signal: new AbortController().signal });
 
     // Import and call cleanup
-    const { cleanupRecordingState } = await import("../tools/recording.js");
+    const { cleanupRecordingState } = await import("../recording-state.js");
     cleanupRecordingState();
 
     // Should be able to start again (not blocked by "already in progress")
@@ -605,7 +605,7 @@ describe("cleanupRecordingState", () => {
 
 describe("isRecordingActive", () => {
   it("returns false when no recording is active", async () => {
-    const { isRecordingActive } = await import("../tools/recording.js");
+    const { isRecordingActive } = await import("../recording-state.js");
     expect(isRecordingActive()).toBe(false);
   });
 
@@ -613,7 +613,7 @@ describe("isRecordingActive", () => {
     const startHandler = getToolHandler(server, "browser_start_recording");
     await startHandler({}, { signal: new AbortController().signal });
 
-    const { isRecordingActive } = await import("../tools/recording.js");
+    const { isRecordingActive } = await import("../recording-state.js");
     expect(isRecordingActive()).toBe(true);
   });
 });

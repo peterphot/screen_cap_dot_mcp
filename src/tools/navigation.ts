@@ -24,7 +24,7 @@ import {
   switchToPage,
   DEFAULT_TIMEOUT_MS,
 } from "../browser.js";
-import { isRecordingActive } from "./recording.js";
+import { isRecordingActive } from "../recording-state.js";
 
 /**
  * Register all navigation tools on the given MCP server.

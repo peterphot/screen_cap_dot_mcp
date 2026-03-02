@@ -31,12 +31,21 @@ vi.mock("../browser.js", async (importOriginal) => {
   };
 });
 
-// Mock the recording module
+// Mock the recording-state module (navigation.ts imports isRecordingActive)
 const mockIsRecordingActive = vi.fn().mockReturnValue(false);
 
-vi.mock("../tools/recording.js", () => ({
+vi.mock("../recording-state.js", () => ({
   isRecordingActive: (...args: unknown[]) => mockIsRecordingActive(...args),
   cleanupRecordingState: vi.fn(),
+  stopActiveRecording: vi.fn().mockResolvedValue(undefined),
+  recState: {
+    recorder: null,
+    path: "",
+    keyMoments: [],
+    startTime: 0,
+    startPromise: null,
+  },
+  MAX_KEY_MOMENTS: 100,
 }));
 
 // Mock page object used by tools
