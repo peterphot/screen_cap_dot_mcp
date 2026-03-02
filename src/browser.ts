@@ -38,7 +38,7 @@ let pagePromise: Promise<Page> | null = null;
 let cdpSessionPromise: Promise<CDPSession> | null = null;
 
 /** Default navigation timeout in milliseconds (60 seconds). */
-const DEFAULT_TIMEOUT_MS = 60_000;
+export const DEFAULT_TIMEOUT_MS = 60_000;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 

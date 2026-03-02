@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DEFAULT_TIMEOUT_MS } from "../browser.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
@@ -19,12 +20,16 @@ const mockEnsurePage = vi.fn();
 const mockListAllPages = vi.fn();
 const mockSwitchToPage = vi.fn();
 
-vi.mock("../browser.js", () => ({
-  ensureBrowser: (...args: unknown[]) => mockEnsureBrowser(...args),
-  ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
-  listAllPages: (...args: unknown[]) => mockListAllPages(...args),
-  switchToPage: (...args: unknown[]) => mockSwitchToPage(...args),
-}));
+vi.mock("../browser.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../browser.js")>();
+  return {
+    ...actual,
+    ensureBrowser: (...args: unknown[]) => mockEnsureBrowser(...args),
+    ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
+    listAllPages: (...args: unknown[]) => mockListAllPages(...args),
+    switchToPage: (...args: unknown[]) => mockSwitchToPage(...args),
+  };
+});
 
 // Mock page object used by tools
 interface MockPage {
@@ -167,7 +172,7 @@ describe("browser_navigate", () => {
     expect(mockEnsurePage).toHaveBeenCalled();
     expect(mockPage.goto).toHaveBeenCalledWith("https://example.com/page", {
       waitUntil: "load",
-      timeout: 60000,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
     expect(result.content[0].text).toContain("https://example.com/page");
     expect(result.content[0].text).toContain("Page Title");
@@ -182,7 +187,7 @@ describe("browser_navigate", () => {
 
     expect(mockPage.goto).toHaveBeenCalledWith("https://example.com", {
       waitUntil: "networkidle2",
-      timeout: 60000,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
   });
 
