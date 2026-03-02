@@ -135,6 +135,98 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects wait/selector without selector field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "selector",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects wait/function without function field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "function",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects wait/delay without delay field", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "delay",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects Infinity timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: Infinity,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects timeout exceeding max (300000)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "smart",
+      timeout: 300_001,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative sleep duration", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "sleep",
+      duration: -100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects Infinity sleep duration", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "sleep",
+      duration: Infinity,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative scroll amount", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll",
+      amount: -500,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty evaluate script", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "evaluate",
+      script: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty wait/function function", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "wait",
+      strategy: "function",
+      function: "",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("RecordingConfigSchema", () => {
@@ -174,7 +266,7 @@ describe("FlowDefinitionSchema", () => {
       description: "Navigate to Channel ROI and capture visualizations",
       recording: { enabled: true, format: "mp4" },
       steps: [
-        { action: "navigate", url: "/channel-roi", label: "nav-channel-roi" },
+        { action: "navigate", url: "https://app.example.com/channel-roi", label: "nav-channel-roi" },
         { action: "wait", strategy: "smart", timeout: 45000 },
         { action: "screenshot", label: "channel-roi-loaded" },
         { action: "scroll", direction: "down", amount: 800 },

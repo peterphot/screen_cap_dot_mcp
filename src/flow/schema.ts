@@ -34,20 +34,56 @@ const TypeStep = z.object({
   label: z.string().optional(),
 });
 
-const WaitStep = z.object({
+const WaitSelectorStep = z.object({
   action: z.literal("wait"),
-  strategy: z.enum(["selector", "network_idle", "smart", "delay", "function"]),
-  selector: z.string().optional(),
-  timeout: z.number().optional(),
-  delay: z.number().optional(),
-  function: z.string().optional(),
+  strategy: z.literal("selector"),
+  selector: z.string(),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
+
+const WaitNetworkIdleStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("network_idle"),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
+  label: z.string().optional(),
+});
+
+const WaitSmartStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("smart"),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
+  label: z.string().optional(),
+});
+
+const WaitDelayStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("delay"),
+  delay: z.number().nonnegative().finite().max(300_000),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
+  label: z.string().optional(),
+});
+
+const WaitFunctionStep = z.object({
+  action: z.literal("wait"),
+  strategy: z.literal("function"),
+  function: z.string().min(1),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
+  label: z.string().optional(),
+});
+
+const WaitStep = z.union([
+  WaitSelectorStep,
+  WaitNetworkIdleStep,
+  WaitSmartStep,
+  WaitDelayStep,
+  WaitFunctionStep,
+]);
 
 const ScrollStep = z.object({
   action: z.literal("scroll"),
   direction: z.enum(["up", "down", "left", "right"]).optional(),
-  amount: z.number().optional(),
+  amount: z.number().nonnegative().finite().max(100_000).optional(),
   selector: z.string().optional(),
   label: z.string().optional(),
 });
@@ -67,19 +103,19 @@ const A11ySnapshotStep = z.object({
 
 const EvaluateStep = z.object({
   action: z.literal("evaluate"),
-  script: z.string(),
+  script: z.string().min(1),
   label: z.string().optional(),
 });
 
 const SleepStep = z.object({
   action: z.literal("sleep"),
-  duration: z.number(),
+  duration: z.number().nonnegative().finite().max(300_000),
   label: z.string().optional(),
 });
 
 // ── Discriminated union of all steps ─────────────────────────────────────
 
-export const FlowStepSchema = z.discriminatedUnion("action", [
+export const FlowStepSchema = z.union([
   NavigateStep,
   ClickStep,
   TypeStep,

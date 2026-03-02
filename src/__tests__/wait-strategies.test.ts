@@ -78,15 +78,16 @@ describe("smartWait", () => {
     );
   });
 
-  it("uses default timeout of 30000ms", async () => {
+  it("uses short per-selector timeout (2s) and overall timeout for network idle", async () => {
     const { smartWait } = await import("../util/wait-strategies.js");
     await smartWait(mockPage as any);
 
-    // Each waitForSelector call should receive the default timeout
+    // Each waitForSelector call should receive the short probe timeout (2000ms)
     expect(mockWaitForSelector).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ timeout: 30000 }),
+      expect.objectContaining({ timeout: 2000 }),
     );
+    // Network idle uses the overall timeout
     expect(mockWaitForNetworkIdle).toHaveBeenCalledWith(
       expect.objectContaining({ timeout: 30000 }),
     );
@@ -96,12 +97,24 @@ describe("smartWait", () => {
     const { smartWait } = await import("../util/wait-strategies.js");
     await smartWait(mockPage as any, 5000);
 
+    // Selector probe timeout is min(2000, 5000) = 2000
     expect(mockWaitForSelector).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ timeout: 5000 }),
+      expect.objectContaining({ timeout: 2000 }),
     );
     expect(mockWaitForNetworkIdle).toHaveBeenCalledWith(
       expect.objectContaining({ timeout: 5000 }),
+    );
+  });
+
+  it("caps selector probe timeout to overall timeout when it is smaller", async () => {
+    const { smartWait } = await import("../util/wait-strategies.js");
+    await smartWait(mockPage as any, 500);
+
+    // Selector probe timeout is min(2000, 500) = 500
+    expect(mockWaitForSelector).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ timeout: 500 }),
     );
   });
 
@@ -141,6 +154,14 @@ describe("smartWait", () => {
 
     // Should log at least start and completion
     expect(mockLoggerInfo).toHaveBeenCalled();
+  });
+
+  it("propagates non-timeout errors from individual selectors", async () => {
+    mockWaitForSelector.mockRejectedValue(new Error("Execution context was destroyed"));
+
+    const { smartWait } = await import("../util/wait-strategies.js");
+
+    await expect(smartWait(mockPage as any)).rejects.toThrow("Execution context was destroyed");
   });
 
   it("propagates non-timeout errors from network idle", async () => {

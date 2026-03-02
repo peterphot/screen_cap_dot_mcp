@@ -24,6 +24,9 @@ const LOADING_SELECTORS = [
 /** Default wait timeout in milliseconds. */
 const DEFAULT_TIMEOUT = 30000;
 
+/** Per-selector probe timeout in milliseconds (short, since indicators may not exist). */
+const SELECTOR_PROBE_TIMEOUT = 2000;
+
 /** Network idle time in milliseconds. */
 const NETWORK_IDLE_TIME = 500;
 
@@ -53,18 +56,26 @@ export async function smartWait(
 
   logger.info(`Smart wait started (timeout: ${effectiveTimeout}ms)`);
 
-  // Phase 1: Wait for loading indicators to disappear
-  for (const selector of LOADING_SELECTORS) {
-    try {
-      await page.waitForSelector(selector, {
-        hidden: true,
-        timeout: effectiveTimeout,
-      });
-    } catch (err) {
-      // Swallow timeout errors — the selector may not exist on the page
-      logger.debug(`Loading indicator check skipped for "${selector}": ${(err as Error).message}`);
-    }
-  }
+  // Phase 1: Wait for loading indicators to disappear (parallel, short per-selector timeout)
+  const selectorTimeout = Math.min(SELECTOR_PROBE_TIMEOUT, effectiveTimeout);
+  await Promise.all(
+    LOADING_SELECTORS.map(async (selector) => {
+      try {
+        await page.waitForSelector(selector, {
+          hidden: true,
+          timeout: selectorTimeout,
+        });
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (msg.includes("Timeout") || msg.includes("waiting for selector")) {
+          // Swallow timeout errors — the selector may not exist on the page
+          logger.debug(`Loading indicator check skipped for "${selector}": ${msg}`);
+        } else {
+          throw err;
+        }
+      }
+    }),
+  );
 
   // Phase 2: Wait for network idle
   logger.info("Waiting for network idle...");
