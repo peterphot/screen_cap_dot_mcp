@@ -16,6 +16,7 @@
 
 import puppeteer, { type Browser, type Page, type CDPSession } from "puppeteer-core";
 import logger from "./util/logger.js";
+import { cleanupRecordingState } from "./recording-state.js";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ export async function ensureBrowser(): Promise<Browser> {
 
     b.on("disconnected", () => {
       logger.warn("Browser disconnected — refs nulled, will reconnect on next call");
+      cleanupRecordingState();
       browser = null;
       page = null;
       cdpSession = null;

@@ -24,6 +24,7 @@ import {
   switchToPage,
   DEFAULT_TIMEOUT_MS,
 } from "../browser.js";
+import { isRecordingActive } from "../recording-state.js";
 
 /**
  * Register all navigation tools on the given MCP server.
@@ -239,6 +240,12 @@ export function registerNavigationTools(server: McpServer): void {
     { index: z.number() },
     async ({ index }) => {
       try {
+        if (isRecordingActive()) {
+          return {
+            content: [{ type: "text" as const, text: "Error: Cannot switch tabs while recording is active. Stop the recording first." }],
+            isError: true,
+          };
+        }
         const page = await switchToPage(index);
         const url = page.url();
         const title = await page.title();

@@ -15,6 +15,8 @@ import { registerNavigationTools } from "./tools/navigation.js";
 import { registerObservationTools } from "./tools/observation.js";
 import { registerWaitingTools } from "./tools/waiting.js";
 import { registerScrollingTools } from "./tools/scrolling.js";
+import { registerRecordingTools } from "./tools/recording.js";
+import { stopActiveRecording } from "./recording-state.js";
 
 // ── Server Setup ────────────────────────────────────────────────────────
 
@@ -29,6 +31,7 @@ registerNavigationTools(server);
 registerObservationTools(server);
 registerWaitingTools(server);
 registerScrollingTools(server);
+registerRecordingTools(server);
 
 // ── Start Server ────────────────────────────────────────────────────────
 
@@ -42,3 +45,14 @@ main().catch((err) => {
   logger.error(`Fatal error: ${(err as Error).message}`);
   process.exit(1);
 });
+
+// ── Graceful Shutdown ────────────────────────────────────────────────────
+
+function gracefulShutdown(): void {
+  stopActiveRecording()
+    .catch(() => { /* best-effort */ })
+    .finally(() => process.exit(0));
+}
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
