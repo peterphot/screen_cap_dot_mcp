@@ -20,14 +20,6 @@ export function setLogLevel(level: LogLevel): void {
   currentLevel = level;
 }
 
-export function getLogLevel(): LogLevel {
-  return currentLevel;
-}
-
-export function resetLogLevel(): void {
-  currentLevel = "info";
-}
-
 function shouldLog(level: LogLevel): boolean {
   return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
 }
@@ -61,5 +53,5 @@ export function error(message: string): void {
   }
 }
 
-const logger = { debug, info, warn, error, setLogLevel, getLogLevel, resetLogLevel };
+const logger = { debug, info, warn, error, setLogLevel };
 export default logger;
