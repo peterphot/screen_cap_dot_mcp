@@ -64,6 +64,23 @@ export function registerNavigationTools(server: McpServer): void {
     },
     async ({ url, waitUntil }) => {
       try {
+        // Validate URL scheme to prevent file:// and javascript: navigation
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          return {
+            content: [{ type: "text" as const, text: `Error navigating: Invalid URL "${url}"` }],
+            isError: true,
+          };
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return {
+            content: [{ type: "text" as const, text: `Error navigating: Only http: and https: URLs are allowed, got "${parsed.protocol}"` }],
+            isError: true,
+          };
+        }
+
         const page = await ensurePage();
         await page.goto(url, {
           waitUntil: waitUntil ?? "load",

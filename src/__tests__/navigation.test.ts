@@ -202,6 +202,42 @@ describe("browser_navigate", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Navigation timeout");
   });
+
+  it("rejects file:// URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "file:///etc/passwd" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects javascript: URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "javascript:alert(1)" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Only http: and https: URLs are allowed");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid URLs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    const result = await handler(
+      { url: "not-a-valid-url" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Invalid URL");
+    expect(mockPage.goto).not.toHaveBeenCalled();
+  });
 });
 
 // ── browser_click ───────────────────────────────────────────────────────

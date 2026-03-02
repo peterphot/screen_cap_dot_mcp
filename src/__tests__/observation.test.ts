@@ -10,7 +10,7 @@
  * - Error paths catch exceptions and return error text with isError: true (never throw)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
@@ -80,18 +80,39 @@ let server: McpServer;
 
 // Base64 PNG stub (1x1 transparent pixel)
 const FAKE_SCREENSHOT_BUFFER = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGP6/x8AAwAB/auKfQAAAABJRU5ErkJggg==", "base64");
+const FAKE_SCREENSHOT_BASE64 = FAKE_SCREENSHOT_BUFFER.toString("base64");
+
+const originalScreenshotDir = process.env.SCREENSHOT_DIR;
+
+afterEach(() => {
+  if (originalScreenshotDir === undefined) {
+    delete process.env.SCREENSHOT_DIR;
+  } else {
+    process.env.SCREENSHOT_DIR = originalScreenshotDir;
+  }
+});
 
 beforeEach(async () => {
   vi.clearAllMocks();
 
   mockElement = {
-    screenshot: vi.fn().mockResolvedValue(FAKE_SCREENSHOT_BUFFER),
+    screenshot: vi.fn().mockImplementation((opts?: { encoding?: string }) => {
+      if (opts?.encoding === "base64") {
+        return Promise.resolve(FAKE_SCREENSHOT_BASE64);
+      }
+      return Promise.resolve(FAKE_SCREENSHOT_BUFFER);
+    }),
   };
 
   mockPage = {
     url: vi.fn().mockReturnValue("https://example.com/page"),
     title: vi.fn().mockResolvedValue("Example Page"),
-    screenshot: vi.fn().mockResolvedValue(FAKE_SCREENSHOT_BUFFER),
+    screenshot: vi.fn().mockImplementation((opts?: { encoding?: string }) => {
+      if (opts?.encoding === "base64") {
+        return Promise.resolve(FAKE_SCREENSHOT_BASE64);
+      }
+      return Promise.resolve(FAKE_SCREENSHOT_BUFFER);
+    }),
     viewport: vi.fn().mockReturnValue({ width: 1280, height: 720 }),
     evaluate: vi.fn().mockResolvedValue({ scrollWidth: 1280, scrollHeight: 3000 }),
     $: vi.fn().mockResolvedValue(mockElement),
@@ -149,7 +170,9 @@ describe("browser_screenshot", () => {
     const result = await handler({}, { signal: new AbortController().signal });
 
     expect(mockEnsurePage).toHaveBeenCalled();
-    expect(mockPage.screenshot).toHaveBeenCalled();
+    expect(mockPage.screenshot).toHaveBeenCalledWith(
+      expect.objectContaining({ encoding: "base64" }),
+    );
     expect(result.content).toHaveLength(1);
     expect(result.content[0].type).toBe("image");
     expect(result.content[0].mimeType).toBe("image/png");
@@ -163,7 +186,7 @@ describe("browser_screenshot", () => {
     await handler({ fullPage: true }, { signal: new AbortController().signal });
 
     expect(mockPage.screenshot).toHaveBeenCalledWith(
-      expect.objectContaining({ fullPage: true }),
+      expect.objectContaining({ fullPage: true, encoding: "base64" }),
     );
   });
 
@@ -175,7 +198,7 @@ describe("browser_screenshot", () => {
     );
 
     expect(mockPage.$).toHaveBeenCalledWith("#main-content");
-    expect(mockElement.screenshot).toHaveBeenCalled();
+    expect(mockElement.screenshot).toHaveBeenCalledWith({ encoding: "base64" });
     expect(result.content[0].type).toBe("image");
     expect(result.content[0].mimeType).toBe("image/png");
   });
@@ -193,23 +216,60 @@ describe("browser_screenshot", () => {
     expect(result.content[0].text).toContain("#nonexistent");
   });
 
-  it("saves screenshot to disk when savePath is provided", async () => {
+  it("saves screenshot to disk when savePath is within allowed directory", async () => {
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/tmp/screenshots/test.png" },
+      { savePath: "/tmp/screen-cap-screenshots/test.png" },
       { signal: new AbortController().signal },
     );
 
     expect(mockMkdir).toHaveBeenCalledWith(
-      expect.stringContaining("/tmp/screenshots"),
+      expect.stringContaining("/tmp/screen-cap-screenshots"),
       expect.objectContaining({ recursive: true }),
     );
     expect(mockWriteFile).toHaveBeenCalledWith(
-      "/tmp/screenshots/test.png",
+      "/tmp/screen-cap-screenshots/test.png",
       expect.any(Buffer),
     );
     // Should still return the image content block
     expect(result.content[0].type).toBe("image");
+  });
+
+  it("rejects savePath outside allowed directory", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { savePath: "/etc/evil.png" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("savePath must be within");
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects savePath with directory traversal", async () => {
+    const handler = getToolHandler(server, "browser_screenshot");
+    const result = await handler(
+      { savePath: "/tmp/screen-cap-screenshots/../../etc/evil.png" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("savePath must be within");
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("respects SCREENSHOT_DIR env var", async () => {
+    process.env.SCREENSHOT_DIR = "/custom/screenshots";
+    const handler = getToolHandler(server, "browser_screenshot");
+
+    // Path within custom dir should work
+    const result = await handler(
+      { savePath: "/custom/screenshots/shot.png" },
+      { signal: new AbortController().signal },
+    );
+    expect(result.content[0].type).toBe("image");
+    expect(mockWriteFile).toHaveBeenCalled();
   });
 
   it("returns error text when screenshot fails (does not throw)", async () => {
@@ -226,7 +286,7 @@ describe("browser_screenshot", () => {
     mockWriteFile.mockRejectedValue(new Error("Permission denied"));
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/readonly/test.png" },
+      { savePath: "/tmp/screen-cap-screenshots/readonly.png" },
       { signal: new AbortController().signal },
     );
 
@@ -239,7 +299,7 @@ describe("browser_screenshot", () => {
 // ── browser_a11y_snapshot ───────────────────────────────────────────────
 
 describe("browser_a11y_snapshot", () => {
-  it("returns JSON accessibility tree with interestingOnly true by default", async () => {
+  it("returns compact JSON accessibility tree with interestingOnly true by default", async () => {
     const handler = getToolHandler(server, "browser_a11y_snapshot");
     const result = await handler({}, { signal: new AbortController().signal });
 
@@ -250,10 +310,32 @@ describe("browser_a11y_snapshot", () => {
     expect(result.content).toHaveLength(1);
     expect(result.content[0].type).toBe("text");
 
-    // Result should be parseable JSON
+    // Result should be parseable compact JSON (no indentation)
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.role).toBe("WebArea");
     expect(parsed.children).toHaveLength(2);
+    // Verify it's compact (no newlines within the JSON)
+    expect(result.content[0].text).not.toContain("\n");
+  });
+
+  it("truncates very large a11y trees", async () => {
+    // Create a large fake a11y tree
+    const largeTree = {
+      role: "WebArea",
+      name: "Large Page",
+      children: Array.from({ length: 50000 }, (_, i) => ({
+        role: "paragraph",
+        name: `Paragraph ${i} with some content to make it larger`,
+      })),
+    };
+    mockPage.accessibility.snapshot.mockResolvedValue(largeTree);
+
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("... (truncated, total");
+    expect(result.content[0].text.length).toBeLessThanOrEqual(512_000 + 100); // MAX + truncation message
   });
 
   it("passes interestingOnly false when explicitly set", async () => {
