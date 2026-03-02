@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import logger from "../util/logger.js";
 
 describe("logger", () => {
-  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let stderrSpy: any;
 
   beforeEach(() => {
     logger.resetLogLevel();
@@ -86,7 +87,7 @@ describe("logger", () => {
       logger.warn("w");
       logger.error("e");
 
-      const calls = stderrSpy.mock.calls.map((c) => c[0] as string);
+      const calls = stderrSpy.mock.calls.map((c: unknown[]) => c[0] as string);
       expect(calls[0]).toContain("[DEBUG]");
       expect(calls[1]).toContain("[INFO]");
       expect(calls[2]).toContain("[WARN]");
