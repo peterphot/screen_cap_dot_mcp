@@ -1,19 +1,21 @@
 {
-  "feature": "pp-3-browsermanager-singleton",
+  "feature": "pp-4-mcp-server-skeleton-and-navigation-tools",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-3",
+    "sourceTicket": "PP-4",
     "mapping": {
-      "T001": { "ticketId": "PP-3", "identifier": "PP-3" },
-      "T002": { "ticketId": "PP-3", "identifier": "PP-3" },
-      "T003": { "ticketId": "PP-3", "identifier": "PP-3" }
+      "T001": { "ticketId": "PP-4", "identifier": "PP-4" },
+      "T002": { "ticketId": "PP-4", "identifier": "PP-4" },
+      "T003": { "ticketId": "PP-4", "identifier": "PP-4" },
+      "T004": { "ticketId": "PP-4", "identifier": "PP-4" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Setup vitest test framework" },
-    "T002": { "status": "complete", "description": "Write failing tests for BrowserManager (26 tests)" },
-    "T003": { "status": "complete", "description": "Implement src/browser.ts -- all 26 tests passing" }
+    "T001": { "status": "complete", "description": "Write 21 failing tests for 8 navigation tools" },
+    "T002": { "status": "complete", "description": "Implement registerNavigationTools with all 8 tools - 21 tests passing" },
+    "T003": { "status": "complete", "description": "Update src/index.ts with McpServer setup, tool registration, StdioServerTransport" },
+    "T004": { "status": "complete", "description": "TypeScript compiles cleanly, all 47 tests pass (26 browser + 21 navigation)" }
   }
 }
