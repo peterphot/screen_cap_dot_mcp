@@ -37,11 +37,37 @@ let browserPromise: Promise<Browser> | null = null;
 let pagePromise: Promise<Page> | null = null;
 let cdpSessionPromise: Promise<CDPSession> | null = null;
 
-/** The CDP endpoint to connect to. Configurable via CHROME_CDP_URL env var. */
-const BROWSER_URL = process.env.CHROME_CDP_URL ?? "http://127.0.0.1:9222";
-
 /** Default navigation timeout in milliseconds (60 seconds). */
 const DEFAULT_TIMEOUT_MS = 60_000;
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * Read and validate the CDP endpoint URL.
+ * Read lazily so env var changes and test overrides take effect.
+ * Restricts to loopback addresses by default to prevent SSRF.
+ */
+function getBrowserUrl(): string {
+  const raw = process.env.CHROME_CDP_URL ?? "http://127.0.0.1:9222";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`Invalid CHROME_CDP_URL: "${raw}" is not a valid URL.`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error(
+      `Invalid CHROME_CDP_URL scheme "${parsed.protocol}". Only http: and https: are allowed.`,
+    );
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new Error(
+      `CHROME_CDP_URL host "${parsed.hostname}" is not a loopback address. ` +
+      `Only ${[...LOOPBACK_HOSTS].join(", ")} are allowed by default.`,
+    );
+  }
+  return raw;
+}
 
 // ── Connection management ───────────────────────────────────────────────
 
@@ -56,17 +82,18 @@ export async function ensureBrowser(): Promise<Browser> {
   if (browserPromise) return browserPromise;
 
   browserPromise = (async () => {
-    logger.info(`Connecting to Chrome at ${BROWSER_URL}`);
+    const browserUrl = getBrowserUrl();
+    logger.info(`Connecting to Chrome at ${browserUrl}`);
 
     let b: Browser;
     try {
       b = await puppeteer.connect({
-        browserURL: BROWSER_URL,
+        browserURL: browserUrl,
         defaultViewport: null,
       });
     } catch (err) {
       throw new Error(
-        `Failed to connect to Chrome at ${BROWSER_URL}. ` +
+        `Failed to connect to Chrome at ${browserUrl}. ` +
         `Ensure Chrome is running with --remote-debugging-port=9222.`,
         { cause: err },
       );
@@ -110,6 +137,11 @@ export async function ensurePage(): Promise<Page> {
     const b = await ensureBrowser();
     const pages = await b.pages();
 
+    // Guard: browser may have disconnected during the await above
+    if (!browser) {
+      throw new Error("Browser disconnected during page initialization.");
+    }
+
     if (pages.length === 0) {
       throw new Error("No open tabs found in Chrome. Open at least one tab and try again.");
     }
@@ -141,8 +173,20 @@ export async function ensureCDPSession(): Promise<CDPSession> {
 
   cdpSessionPromise = (async () => {
     const p = await ensurePage();
-    cdpSession = await p.createCDPSession();
 
+    // Guard: browser may have disconnected during the await above
+    if (!browser) {
+      throw new Error("Browser disconnected during CDP session creation.");
+    }
+
+    const session = await p.createCDPSession();
+
+    // Guard: browser may have disconnected during createCDPSession
+    if (!browser) {
+      throw new Error("Browser disconnected during CDP session creation.");
+    }
+
+    cdpSession = session;
     logger.info("CDP session created");
     return cdpSession;
   })();

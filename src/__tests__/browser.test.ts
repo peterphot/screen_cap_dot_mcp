@@ -10,7 +10,7 @@
  * - Error handling for edge cases
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
@@ -67,9 +67,21 @@ import {
   _resetForTesting,
 } from "../browser.js";
 
+const originalChromeUrl = process.env.CHROME_CDP_URL;
+
+afterEach(() => {
+  // Restore env var to avoid test pollution
+  if (originalChromeUrl === undefined) {
+    delete process.env.CHROME_CDP_URL;
+  } else {
+    process.env.CHROME_CDP_URL = originalChromeUrl;
+  }
+});
+
 beforeEach(() => {
   vi.restoreAllMocks();
   _resetForTesting();
+  delete process.env.CHROME_CDP_URL;
   disconnectHandler = null;
 
   mockCDPSession = {
@@ -368,5 +380,93 @@ describe("disconnect handling", () => {
 
     const result = await ensureBrowser();
     expect(result).toBe(mockBrowser);
+  });
+});
+
+// ── CHROME_CDP_URL validation ────────────────────────────────────────────
+
+describe("CHROME_CDP_URL validation", () => {
+  it("rejects non-loopback hosts", async () => {
+    process.env.CHROME_CDP_URL = "http://evil.example.com:9222";
+
+    await expect(ensureBrowser()).rejects.toThrow(
+      'not a loopback address',
+    );
+    expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-http schemes", async () => {
+    process.env.CHROME_CDP_URL = "ftp://127.0.0.1:9222";
+
+    await expect(ensureBrowser()).rejects.toThrow(
+      'Only http: and https: are allowed',
+    );
+    expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed URLs", async () => {
+    process.env.CHROME_CDP_URL = "not-a-url";
+
+    await expect(ensureBrowser()).rejects.toThrow(
+      'not a valid URL',
+    );
+    expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it("accepts localhost", async () => {
+    process.env.CHROME_CDP_URL = "http://localhost:9222";
+
+    const result = await ensureBrowser();
+    expect(mockConnect).toHaveBeenCalledWith({
+      browserURL: "http://localhost:9222",
+      defaultViewport: null,
+    });
+    expect(result).toBe(mockBrowser);
+  });
+
+  it("reads env var lazily (can change between calls)", async () => {
+    // First call with default
+    await ensureBrowser();
+    expect(mockConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ browserURL: "http://127.0.0.1:9222" }),
+    );
+
+    // Simulate disconnect
+    disconnectHandler!();
+
+    // Change env var and reconnect
+    process.env.CHROME_CDP_URL = "http://localhost:3000";
+    await ensureBrowser();
+    expect(mockConnect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ browserURL: "http://localhost:3000" }),
+    );
+  });
+});
+
+// ── Disconnect race guards ───────────────────────────────────────────────
+
+describe("disconnect race guards", () => {
+  it("ensurePage throws if browser disconnects during page init", async () => {
+    // Make b.pages() trigger a disconnect before resolving
+    mockBrowser.pages.mockImplementation(async () => {
+      disconnectHandler!(); // Simulate disconnect mid-operation
+      return [mockPage, mockPage2];
+    });
+
+    await expect(ensurePage()).rejects.toThrow(
+      "Browser disconnected during page initialization",
+    );
+  });
+
+  it("ensureCDPSession throws if browser disconnects during session creation", async () => {
+    // Make createCDPSession trigger a disconnect before returning
+    mockPage.createCDPSession.mockImplementation(async () => {
+      disconnectHandler!();
+      return mockCDPSession;
+    });
+
+    await expect(ensureCDPSession()).rejects.toThrow(
+      "Browser disconnected during CDP session creation",
+    );
   });
 });
