@@ -51,7 +51,7 @@ vi.mock("../util/logger.js", () => ({
 import { registerFlowTools } from "../tools/flow.js";
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{
-  content: Array<{ type: string; text: string }>;
+  content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 }>;
 
