@@ -22,6 +22,7 @@ import {
   ensurePage,
   listAllPages,
   switchToPage,
+  DEFAULT_TIMEOUT_MS,
 } from "../browser.js";
 
 /**
@@ -33,7 +34,7 @@ export function registerNavigationTools(server: McpServer): void {
   server.tool(
     "browser_connect",
     "Connect to Chrome via CDP. Uses an already-running Chrome instance with remote debugging enabled.",
-    { port: z.number().optional() },
+    {},
     async () => {
       try {
         await ensureBrowser();
@@ -66,7 +67,7 @@ export function registerNavigationTools(server: McpServer): void {
         const page = await ensurePage();
         await page.goto(url, {
           waitUntil: waitUntil ?? "load",
-          timeout: 60000,
+          timeout: DEFAULT_TIMEOUT_MS,
         });
         const finalUrl = page.url();
         const title = await page.title();
