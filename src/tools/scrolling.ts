@@ -3,7 +3,7 @@
  *
  * Registers 2 browser scrolling tools on the McpServer instance:
  * - browser_scroll: Scroll page or container in a direction
- * - browser_scroll_to_element: Scroll element into view
+ * - browser_scroll_to_element: Scroll element into view (by CSS selector or ref)
  *
  * All handlers wrap their logic in try/catch and return error messages
  * as text content (never throw).
@@ -11,7 +11,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { ensurePage } from "../browser.js";
+import { ensurePage, ensureCDPSession } from "../browser.js";
+import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
 import logger from "../util/logger.js";
 
 /**
@@ -122,12 +123,52 @@ export function registerScrollingTools(server: McpServer): void {
 
   server.tool(
     "browser_scroll_to_element",
-    "Scroll a specific element into view using smooth scrolling, centering it in the viewport.",
+    "Scroll a specific element into view. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
     {
-      selector: z.string().describe("CSS selector of the element to scroll into view"),
+      selector: z.string().optional().describe("CSS selector of the element to scroll into view"),
+      ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e1')"),
     },
-    async ({ selector }) => {
+    async ({ selector, ref }) => {
       try {
+        const resolved = validateSelectorOrRef(selector, ref);
+        if ("error" in resolved) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
+            isError: true,
+          };
+        }
+
+        if (resolved.type === "ref") {
+          try {
+            const cdp = await ensureCDPSession();
+            await cdp.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: resolved.backendNodeId });
+          } catch (cdpErr) {
+            const msg = (cdpErr as Error).message;
+            if (msg.includes("Could not find node")) {
+              return {
+                content: [{ type: "text" as const, text: `Error: Stale ref "${ref}". Take a new browser_a11y_snapshot to get fresh refs.` }],
+                isError: true,
+              };
+            }
+            return {
+              content: [{ type: "text" as const, text: `Error scrolling to ref "${ref}": ${msg}` }],
+              isError: true,
+            };
+          }
+
+          logger.info(`Scrolled element into view via ref: ${ref}`);
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Scrolled ref "${ref}" into view`,
+              },
+            ],
+          };
+        }
+
+        // Selector path: existing behavior
         const page = await ensurePage();
 
         const found = await page.evaluate((sel: string) => {
@@ -141,7 +182,7 @@ export function registerScrollingTools(server: McpServer): void {
             // Wait 350ms for smooth scroll to settle (typically 300-500ms)
             setTimeout(() => resolve(true), 350);
           });
-        }, selector);
+        }, selector!);
 
         if (!found) {
           return {
@@ -166,11 +207,12 @@ export function registerScrollingTools(server: McpServer): void {
           ],
         };
       } catch (err) {
+        const target = ref ? `ref ${ref}` : selector;
         return {
           content: [
             {
               type: "text" as const,
-              text: `Error scrolling to element "${selector}": ${(err as Error).message}`,
+              text: `Error scrolling to element "${target}": ${(err as Error).message}`,
             },
           ],
           isError: true,
