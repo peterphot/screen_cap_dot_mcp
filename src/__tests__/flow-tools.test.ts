@@ -11,7 +11,7 @@
  * - Error paths return error text with isError: true
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -51,54 +51,63 @@ vi.mock("../util/logger.js", () => ({
   },
 }));
 
-// ── Test helpers ─────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────
 
-import { registerFlowTools } from "../tools/flow.js";
+type RegisteredToolsMap = Record<string, { handler: Function; description?: string }>;
 
-type ToolHandler = (args: Record<string, unknown>) => Promise<{
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-}>;
-
-function getRegisteredTools(server: McpServer): Map<string, ToolHandler> {
-  const tools = new Map<string, ToolHandler>();
-  const originalTool = server.tool.bind(server);
-
-  // Replace server.tool to capture registrations
-  server.tool = ((
-    name: string,
-    _description: string,
-    _schema: Record<string, unknown>,
-    handler: ToolHandler,
-  ) => {
-    tools.set(name, handler);
-    return originalTool(name, _description, _schema, handler);
-  }) as typeof server.tool;
-
-  registerFlowTools(server);
-  return tools;
+function getToolHandler(server: McpServer, toolName: string) {
+  const tools = (server as unknown as { _registeredTools: RegisteredToolsMap })
+    ._registeredTools;
+  const tool = tools[toolName];
+  if (!tool) {
+    throw new Error(`Tool "${toolName}" not registered on server`);
+  }
+  return tool.handler;
 }
+
+function getRegisteredTools(server: McpServer): RegisteredToolsMap {
+  return (server as unknown as { _registeredTools: RegisteredToolsMap })._registeredTools;
+}
+
+// ── Setup ────────────────────────────────────────────────────────────────
+
+let server: McpServer;
+
+beforeEach(async () => {
+  vi.clearAllMocks();
+
+  // Ensure FLOWS_DIR is the default
+  delete process.env.FLOWS_DIR;
+
+  mockMkdir.mockResolvedValue(undefined);
+  mockWriteFile.mockResolvedValue(undefined);
+  // Default realpath mock: return the path unchanged (no symlinks)
+  mockRealpath.mockImplementation(async (p: string) => p);
+
+  // Create a fresh server and register tools for each test
+  server = new McpServer({ name: "test-server", version: "1.0.0" });
+
+  // Reset module state by re-importing (vi.resetModules ensures fresh module)
+  vi.resetModules();
+  const { registerFlowTools } = await import("../tools/flow.js");
+  registerFlowTools(server);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe("Flow tools registration", () => {
-  let server: McpServer;
-  let tools: Map<string, ToolHandler>;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    server = new McpServer({ name: "test", version: "0.0.1" });
-    tools = getRegisteredTools(server);
-    mockMkdir.mockResolvedValue(undefined);
-    mockWriteFile.mockResolvedValue(undefined);
-    // Default realpath mock: return the path unchanged (no symlinks)
-    mockRealpath.mockImplementation(async (p: string) => p);
-  });
 
   it("registers all 3 flow tools", () => {
-    expect(tools.has("browser_run_flow")).toBe(true);
-    expect(tools.has("browser_list_flows")).toBe(true);
-    expect(tools.has("browser_save_flow")).toBe(true);
+    const tools = getRegisteredTools(server);
+    const toolNames = Object.keys(tools);
+
+    expect(toolNames).toContain("browser_run_flow");
+    expect(toolNames).toContain("browser_list_flows");
+    expect(toolNames).toContain("browser_save_flow");
   });
 
   // ── browser_run_flow ───────────────────────────────────────────────
@@ -119,7 +128,7 @@ describe("Flow tools registration", () => {
 
     it("executes an inline flow definition", async () => {
       mockFlowRunnerRun.mockResolvedValue(mockRunResult);
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ flow: validFlow });
 
@@ -132,7 +141,7 @@ describe("Flow tools registration", () => {
     it("loads and executes a named flow from disk", async () => {
       mockReadFile.mockResolvedValue(JSON.stringify(validFlow));
       mockFlowRunnerRun.mockResolvedValue(mockRunResult);
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ name: "test-flow" });
 
@@ -146,7 +155,7 @@ describe("Flow tools registration", () => {
 
     it("passes record override to runner", async () => {
       mockFlowRunnerRun.mockResolvedValue(mockRunResult);
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       await handler({ flow: validFlow, record: true });
 
@@ -157,7 +166,7 @@ describe("Flow tools registration", () => {
     });
 
     it("returns error for invalid inline flow", async () => {
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ flow: { steps: [] } });
 
@@ -167,7 +176,7 @@ describe("Flow tools registration", () => {
 
     it("returns error when named flow not found", async () => {
       mockReadFile.mockRejectedValue(new Error("ENOENT"));
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ name: "nonexistent" });
 
@@ -176,7 +185,7 @@ describe("Flow tools registration", () => {
     });
 
     it("returns error when neither name nor flow provided", async () => {
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({});
 
@@ -192,7 +201,7 @@ describe("Flow tools registration", () => {
           { stepIndex: 1, action: "click", success: false, error: "Element not found", durationMs: 30 },
         ],
       });
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ flow: validFlow });
 
@@ -205,7 +214,7 @@ describe("Flow tools registration", () => {
         ...mockRunResult,
         recordingPath: "output/test/recording.mp4",
       });
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ flow: validFlow });
 
@@ -214,7 +223,7 @@ describe("Flow tools registration", () => {
 
     it("catches runner exceptions", async () => {
       mockFlowRunnerRun.mockRejectedValue(new Error("Browser crashed"));
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ flow: validFlow });
 
@@ -245,7 +254,7 @@ describe("Flow tools registration", () => {
         });
       });
 
-      const handler = tools.get("browser_list_flows")!;
+      const handler = getToolHandler(server, "browser_list_flows");
       const result = await handler({});
 
       const flows = JSON.parse(result.content[0].text);
@@ -259,7 +268,7 @@ describe("Flow tools registration", () => {
 
     it("returns message when no flows exist", async () => {
       mockReaddir.mockResolvedValue([]);
-      const handler = tools.get("browser_list_flows")!;
+      const handler = getToolHandler(server, "browser_list_flows");
 
       const result = await handler({});
 
@@ -275,7 +284,7 @@ describe("Flow tools registration", () => {
         }),
       );
 
-      const handler = tools.get("browser_list_flows")!;
+      const handler = getToolHandler(server, "browser_list_flows");
       const result = await handler({});
 
       const flows = JSON.parse(result.content[0].text);
@@ -286,7 +295,7 @@ describe("Flow tools registration", () => {
       mockReaddir.mockResolvedValue(["bad.json"]);
       mockReadFile.mockRejectedValue(new Error("Permission denied"));
 
-      const handler = tools.get("browser_list_flows")!;
+      const handler = getToolHandler(server, "browser_list_flows");
       const result = await handler({});
 
       const flows = JSON.parse(result.content[0].text);
@@ -298,7 +307,7 @@ describe("Flow tools registration", () => {
       mockReaddir.mockResolvedValue(["invalid.json"]);
       mockReadFile.mockResolvedValue("{ bad json");
 
-      const handler = tools.get("browser_list_flows")!;
+      const handler = getToolHandler(server, "browser_list_flows");
       const result = await handler({});
 
       const flows = JSON.parse(result.content[0].text);
@@ -311,7 +320,7 @@ describe("Flow tools registration", () => {
 
   describe("browser_save_flow", () => {
     it("saves a valid flow definition", async () => {
-      const handler = tools.get("browser_save_flow")!;
+      const handler = getToolHandler(server, "browser_save_flow");
       const flow = {
         name: "My Test Flow",
         description: "Test",
@@ -331,7 +340,7 @@ describe("Flow tools registration", () => {
     });
 
     it("rejects invalid flow definition", async () => {
-      const handler = tools.get("browser_save_flow")!;
+      const handler = getToolHandler(server, "browser_save_flow");
 
       const result = await handler({ flow: { name: "bad", steps: [] } });
 
@@ -340,7 +349,7 @@ describe("Flow tools registration", () => {
     });
 
     it("sanitizes flow name for filename", async () => {
-      const handler = tools.get("browser_save_flow")!;
+      const handler = getToolHandler(server, "browser_save_flow");
       const flow = {
         name: "My Flow (v2) [test]",
         steps: [{ action: "navigate", url: "https://example.com" }],
@@ -353,7 +362,7 @@ describe("Flow tools registration", () => {
 
     it("catches file system errors", async () => {
       mockWriteFile.mockRejectedValue(new Error("Disk full"));
-      const handler = tools.get("browser_save_flow")!;
+      const handler = getToolHandler(server, "browser_save_flow");
 
       const result = await handler({
         flow: {
@@ -371,7 +380,7 @@ describe("Flow tools registration", () => {
 
   describe("path traversal protection", () => {
     it("rejects flow name with forward slash", async () => {
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ name: "../../../etc/passwd" });
 
@@ -381,7 +390,7 @@ describe("Flow tools registration", () => {
     });
 
     it("rejects flow name with backslash", async () => {
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ name: "..\\..\\etc\\passwd" });
 
@@ -391,7 +400,7 @@ describe("Flow tools registration", () => {
     });
 
     it("rejects flow name with dot-dot", async () => {
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
 
       const result = await handler({ name: "..secret" });
 
@@ -407,7 +416,7 @@ describe("Flow tools registration", () => {
         .mockResolvedValueOnce("/etc")
         .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
 
-      const handler = tools.get("browser_save_flow")!;
+      const handler = getToolHandler(server, "browser_save_flow");
       const result = await handler({
         flow: {
           name: "legit",
@@ -424,7 +433,7 @@ describe("Flow tools registration", () => {
         .mockResolvedValueOnce("/etc")
         .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
 
-      const handler = tools.get("browser_run_flow")!;
+      const handler = getToolHandler(server, "browser_run_flow");
       const result = await handler({ name: "legit" });
 
       expect(result.isError).toBe(true);
