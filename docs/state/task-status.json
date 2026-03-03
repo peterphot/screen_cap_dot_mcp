@@ -1,17 +1,17 @@
 {
-  "feature": "pp-12-cdp-helpers",
+  "feature": "pp-13-a11y-ref-ids",
   "tickets": {
-    "enabled": false,
-    "type": "local",
+    "enabled": true,
+    "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-12",
+    "sourceTicket": "PP-13",
     "mapping": {
-      "T001": { "ticketId": "PP-12", "identifier": "PP-12" },
-      "T002": { "ticketId": "PP-12", "identifier": "PP-12" }
+      "T001": { "ticketId": "PP-13", "identifier": "PP-13" },
+      "T002": { "ticketId": "PP-13", "identifier": "PP-13" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write failing unit tests for cdp-helpers module" },
-    "T002": { "status": "complete", "description": "Implement cdp-helpers module to make all tests pass" }
+    "T001": { "status": "complete", "description": "Test: Write failing tests for a11y ref ID annotation" },
+    "T002": { "status": "in_progress", "description": "Implement: annotateTreeWithRefs and integrate into handler" }
   }
 }

@@ -22,6 +22,15 @@ vi.mock("../browser.js", () => ({
   ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
 }));
 
+// Mock the ref-store module
+const mockClearRefs = vi.fn();
+const mockAllocateRef = vi.fn();
+
+vi.mock("../ref-store.js", () => ({
+  clearRefs: (...args: unknown[]) => mockClearRefs(...args),
+  allocateRef: (...args: unknown[]) => mockAllocateRef(...args),
+}));
+
 // Mock node:fs/promises for savePath tests
 const mockWriteFile = vi.fn();
 const mockMkdir = vi.fn();
@@ -123,9 +132,11 @@ beforeEach(async () => {
       snapshot: vi.fn().mockResolvedValue({
         role: "WebArea",
         name: "Example Page",
+        backendNodeId: 1,
+        loaderId: "loader-abc",
         children: [
-          { role: "heading", name: "Welcome", level: 1 },
-          { role: "link", name: "Click me" },
+          { role: "heading", name: "Welcome", level: 1, backendNodeId: 2 },
+          { role: "link", name: "Click me", backendNodeId: 3, loaderId: "loader-abc" },
         ],
       }),
     },
@@ -136,6 +147,13 @@ beforeEach(async () => {
   mockMkdir.mockResolvedValue(undefined);
   // By default, realpath returns the path unchanged (no symlinks)
   mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
+
+  // allocateRef returns sequential ref IDs ("e1", "e2", ...)
+  let refCounter = 0;
+  mockAllocateRef.mockImplementation(() => {
+    refCounter += 1;
+    return `e${refCounter}`;
+  });
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -338,8 +356,75 @@ describe("browser_a11y_snapshot", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.role).toBe("WebArea");
     expect(parsed.children).toHaveLength(2);
+    // Verify ref IDs are present on annotated nodes
+    expect(parsed.ref).toBe("e1");
+    expect(parsed.children[0].ref).toBe("e2");
+    expect(parsed.children[1].ref).toBe("e3");
     // Verify it's compact (no newlines within the JSON)
     expect(result.content[0].text).not.toContain("\n");
+  });
+
+  it("annotates nodes with ref IDs from allocateRef", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    const parsed = JSON.parse(result.content[0].text);
+    // Root and two children each have backendNodeId, so 3 refs allocated
+    expect(mockAllocateRef).toHaveBeenCalledTimes(3);
+    expect(mockAllocateRef).toHaveBeenCalledWith(1); // root backendNodeId
+    expect(mockAllocateRef).toHaveBeenCalledWith(2); // heading backendNodeId
+    expect(mockAllocateRef).toHaveBeenCalledWith(3); // link backendNodeId
+
+    expect(parsed.ref).toBe("e1");
+    expect(parsed.children[0].ref).toBe("e2");
+    expect(parsed.children[1].ref).toBe("e3");
+  });
+
+  it("strips backendNodeId and loaderId from output", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    const parsed = JSON.parse(result.content[0].text);
+    // backendNodeId should be stripped from all nodes
+    expect(parsed).not.toHaveProperty("backendNodeId");
+    expect(parsed.children[0]).not.toHaveProperty("backendNodeId");
+    expect(parsed.children[1]).not.toHaveProperty("backendNodeId");
+    // loaderId should be stripped from all nodes
+    expect(parsed).not.toHaveProperty("loaderId");
+    expect(parsed.children[0]).not.toHaveProperty("loaderId");
+    expect(parsed.children[1]).not.toHaveProperty("loaderId");
+  });
+
+  it("calls clearRefs at the start of each snapshot", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    await handler({}, { signal: new AbortController().signal });
+
+    expect(mockClearRefs).toHaveBeenCalledTimes(1);
+    // clearRefs should be called before allocateRef
+    const clearRefsOrder = mockClearRefs.mock.invocationCallOrder[0];
+    const firstAllocateOrder = mockAllocateRef.mock.invocationCallOrder[0];
+    expect(clearRefsOrder).toBeLessThan(firstAllocateOrder);
+  });
+
+  it("handles nodes without backendNodeId (no ref assigned)", async () => {
+    mockPage.accessibility.snapshot.mockResolvedValue({
+      role: "WebArea",
+      name: "Simple Page",
+      children: [
+        { role: "text", name: "Plain text" }, // no backendNodeId
+      ],
+    });
+
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+
+    const parsed = JSON.parse(result.content[0].text);
+    // Root has no backendNodeId, so no ref
+    expect(parsed).not.toHaveProperty("ref");
+    // Child has no backendNodeId, so no ref
+    expect(parsed.children[0]).not.toHaveProperty("ref");
+    // allocateRef should not have been called
+    expect(mockAllocateRef).not.toHaveBeenCalled();
   });
 
   it("truncates very large a11y trees", async () => {
@@ -382,6 +467,64 @@ describe("browser_a11y_snapshot", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toContain("Accessibility not available");
+  });
+
+  it("tool description mentions ref IDs", () => {
+    const tools = getRegisteredTools(server);
+    const description = tools["browser_a11y_snapshot"].description ?? "";
+    expect(description).toContain("ref");
+  });
+});
+
+// ── annotateTreeWithRefs (exported helper) ─────────────────────────────
+
+describe("annotateTreeWithRefs", () => {
+  it("assigns ref IDs to nodes with backendNodeId and strips internal fields", async () => {
+    const { annotateTreeWithRefs } = await import("../tools/observation.js");
+
+    const tree = {
+      role: "RootWebArea",
+      name: "My App",
+      backendNodeId: 10,
+      loaderId: "loader-xyz",
+      children: [
+        { role: "link", name: "Dashboard", backendNodeId: 20 },
+        { role: "combobox", name: "Filter", value: "All", backendNodeId: 30, loaderId: "loader-xyz" },
+      ],
+    };
+
+    const result = annotateTreeWithRefs(tree);
+
+    // Ref IDs assigned
+    expect(result.ref).toBe("e1");
+    expect(result.children[0].ref).toBe("e2");
+    expect(result.children[1].ref).toBe("e3");
+
+    // Internal fields stripped
+    expect(result).not.toHaveProperty("backendNodeId");
+    expect(result).not.toHaveProperty("loaderId");
+    expect(result.children[0]).not.toHaveProperty("backendNodeId");
+    expect(result.children[1]).not.toHaveProperty("backendNodeId");
+    expect(result.children[1]).not.toHaveProperty("loaderId");
+
+    // Original fields preserved
+    expect(result.role).toBe("RootWebArea");
+    expect(result.name).toBe("My App");
+    expect(result.children[1].value).toBe("All");
+  });
+
+  it("skips ref assignment for nodes without backendNodeId", async () => {
+    const { annotateTreeWithRefs } = await import("../tools/observation.js");
+
+    const tree = {
+      role: "text",
+      name: "Just text",
+    };
+
+    const result = annotateTreeWithRefs(tree);
+
+    expect(result).not.toHaveProperty("ref");
+    expect(mockAllocateRef).not.toHaveBeenCalled();
   });
 });
 

@@ -16,6 +16,7 @@ import { z } from "zod";
 import { writeFile, mkdir, realpath } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { ensurePage } from "../browser.js";
+import { clearRefs, allocateRef } from "../ref-store.js";
 import logger from "../util/logger.js";
 
 /**
@@ -25,6 +26,33 @@ import logger from "../util/logger.js";
  */
 function getScreenshotDir(): string {
   return resolve(process.env.SCREENSHOT_DIR ?? "/tmp/screen-cap-screenshots");
+}
+
+/**
+ * Recursively annotate an accessibility tree node with ref IDs.
+ *
+ * For each node that has a `backendNodeId` (number), allocates a sequential
+ * ref ID via `allocateRef` and adds a `ref` field. Strips internal fields
+ * (`backendNodeId`, `loaderId`) that are not useful to the LLM consumer.
+ * Processes `children` recursively.
+ *
+ * Mutates the node in-place and returns it for convenience.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function annotateTreeWithRefs(node: Record<string, any>): Record<string, any> {
+  if (typeof node.backendNodeId === "number") {
+    node.ref = allocateRef(node.backendNodeId);
+  }
+  delete node.backendNodeId;
+  delete node.loaderId;
+
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      annotateTreeWithRefs(child);
+    }
+  }
+
+  return node;
 }
 
 /** Maximum character length for a11y tree JSON before truncation. */
@@ -132,16 +160,21 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_a11y_snapshot",
-    "Capture the accessibility tree of the current page. Returns a JSON representation of the a11y tree.",
+    'Capture the accessibility tree of the current page. Returns a JSON representation with ref IDs (e.g. "ref": "e1") that can be used with browser_click, browser_type, browser_scroll_to_element, and browser_hover instead of CSS selectors.',
     {
       interestingOnly: z.boolean().optional(),
     },
     async ({ interestingOnly }) => {
       try {
         const page = await ensurePage();
+        clearRefs();
         const snapshot = await page.accessibility.snapshot({
           interestingOnly: interestingOnly ?? true,
         });
+
+        if (snapshot) {
+          annotateTreeWithRefs(snapshot);
+        }
 
         const raw = JSON.stringify(snapshot);
         const text = raw.length > MAX_A11Y_CHARS
