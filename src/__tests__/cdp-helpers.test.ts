@@ -143,7 +143,10 @@ describe("typeByBackendNodeId", () => {
   });
 
   it("with clear=true sends Ctrl+A before inserting text", async () => {
-    mockSend.mockResolvedValue(undefined); // All calls succeed
+    mockSend.mockResolvedValueOnce(undefined); // DOM.focus
+    mockSend.mockResolvedValueOnce(undefined); // keyDown (Ctrl+A)
+    mockSend.mockResolvedValueOnce(undefined); // keyUp (Ctrl+A)
+    mockSend.mockResolvedValueOnce(undefined); // Input.insertText
 
     await typeByBackendNodeId(42, "new text", true);
 
@@ -160,10 +163,8 @@ describe("typeByBackendNodeId", () => {
       code: "KeyA",
     });
     // Verify modifier flags for Ctrl
-    expect(
-      calls[1][1].modifiers === 2 ||
-      calls[1][1].windowsVirtualKeyCode === 65,
-    ).toBe(true);
+    expect(calls[1][1].modifiers).toBe(2);
+    expect(calls[1][1].windowsVirtualKeyCode).toBe(65);
 
     expect(calls[2][0]).toBe("Input.dispatchKeyEvent");
     expect(calls[2][1]).toMatchObject({
@@ -213,8 +214,48 @@ describe("hoverByBackendNodeId", () => {
     ]);
     expect(calls[2]).toEqual([
       "Input.dispatchMouseEvent",
-      { type: "mouseMoved", x: 50, y: 50, button: "left", clickCount: 1 },
+      { type: "mouseMoved", x: 50, y: 50, button: "none", clickCount: 0 },
     ]);
+  });
+});
+
+// ── Input validation ──────────────────────────────────────────────────────
+
+describe("input validation", () => {
+  it("getElementCenter rejects negative backendNodeId", async () => {
+    await expect(getElementCenter(-1)).rejects.toThrow(RangeError);
+    await expect(getElementCenter(-1)).rejects.toThrow("Invalid backendNodeId");
+  });
+
+  it("getElementCenter rejects non-integer backendNodeId", async () => {
+    await expect(getElementCenter(1.5)).rejects.toThrow(RangeError);
+  });
+
+  it("clickByBackendNodeId rejects negative backendNodeId", async () => {
+    await expect(clickByBackendNodeId(-1)).rejects.toThrow(RangeError);
+  });
+
+  it("typeByBackendNodeId rejects negative backendNodeId", async () => {
+    await expect(typeByBackendNodeId(-1, "text")).rejects.toThrow(RangeError);
+  });
+
+  it("hoverByBackendNodeId rejects negative backendNodeId", async () => {
+    await expect(hoverByBackendNodeId(-1)).rejects.toThrow(RangeError);
+  });
+
+  it("getElementCenter rejects NaN backendNodeId", async () => {
+    await expect(getElementCenter(NaN)).rejects.toThrow(RangeError);
+  });
+
+  it("getElementCenter throws for short quad", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0]],
+    }); // DOM.getContentQuads — only 4 values instead of 8
+
+    await expect(getElementCenter(42)).rejects.toThrow(
+      "Expected quad with 8 values, got 4",
+    );
   });
 });
 

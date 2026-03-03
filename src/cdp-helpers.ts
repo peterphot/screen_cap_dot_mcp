@@ -14,6 +14,19 @@
 
 import { ensureCDPSession } from "./browser.js";
 
+/** CDP modifier flag for the Control key. */
+const CTRL_MODIFIER = 2;
+/** Windows virtual key code for the "A" key. */
+const VK_KEY_A = 65;
+
+// ── Input validation ────────────────────────────────────────────────────
+
+function assertValidNodeId(id: number): void {
+  if (!Number.isInteger(id) || id < 0) {
+    throw new RangeError(`Invalid backendNodeId: ${id}`);
+  }
+}
+
 // ── Error wrapping ──────────────────────────────────────────────────────
 
 /**
@@ -41,6 +54,9 @@ async function wrapStaleNodeError<T>(fn: () => Promise<T>): Promise<T> {
  * Indices: [x1,y1, x2,y2, x3,y3, x4,y4]
  */
 function quadCenter(quad: number[]): { x: number; y: number } {
+  if (quad.length < 8) {
+    throw new Error(`Expected quad with 8 values, got ${quad.length}`);
+  }
   const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
   const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
   return { x, y };
@@ -60,6 +76,7 @@ function quadCenter(quad: number[]): { x: number; y: number } {
 export async function getElementCenter(
   backendNodeId: number,
 ): Promise<{ x: number; y: number }> {
+  assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const cdp = await ensureCDPSession();
 
@@ -91,6 +108,7 @@ export async function getElementCenter(
 export async function clickByBackendNodeId(
   backendNodeId: number,
 ): Promise<{ x: number; y: number }> {
+  assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const center = await getElementCenter(backendNodeId);
     const cdp = await ensureCDPSession();
@@ -128,6 +146,7 @@ export async function typeByBackendNodeId(
   text: string,
   clear?: boolean,
 ): Promise<void> {
+  assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const cdp = await ensureCDPSession();
 
@@ -139,15 +158,15 @@ export async function typeByBackendNodeId(
         type: "keyDown",
         key: "a",
         code: "KeyA",
-        modifiers: 2, // Ctrl modifier
-        windowsVirtualKeyCode: 65,
+        modifiers: CTRL_MODIFIER,
+        windowsVirtualKeyCode: VK_KEY_A,
       });
       await cdp.send("Input.dispatchKeyEvent", {
         type: "keyUp",
         key: "a",
         code: "KeyA",
-        modifiers: 2,
-        windowsVirtualKeyCode: 65,
+        modifiers: CTRL_MODIFIER,
+        windowsVirtualKeyCode: VK_KEY_A,
       });
     }
 
@@ -166,6 +185,7 @@ export async function typeByBackendNodeId(
 export async function hoverByBackendNodeId(
   backendNodeId: number,
 ): Promise<{ x: number; y: number }> {
+  assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const center = await getElementCenter(backendNodeId);
     const cdp = await ensureCDPSession();
@@ -174,8 +194,8 @@ export async function hoverByBackendNodeId(
       type: "mouseMoved",
       x: center.x,
       y: center.y,
-      button: "left",
-      clickCount: 1,
+      button: "none",
+      clickCount: 0,
     });
 
     return center;
