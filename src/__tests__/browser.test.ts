@@ -87,6 +87,7 @@ import {
   _resetForTesting,
 } from "../browser.js";
 import { clearRefs } from "../ref-store.js";
+import { cleanupRecordingState } from "../recording-state.js";
 
 const originalChromeUrl = process.env.CHROME_CDP_URL;
 
@@ -102,6 +103,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.restoreAllMocks();
   _resetForTesting();
+  vi.clearAllMocks();
   delete process.env.CHROME_CDP_URL;
   disconnectHandler = null;
 
@@ -342,7 +344,7 @@ describe("switchToPage", () => {
     await ensureBrowser();
     await switchToPage(1);
 
-    expect(clearRefs).toHaveBeenCalled();
+    expect(clearRefs).toHaveBeenCalledTimes(1);
   });
 
   it("throws on invalid index (negative)", async () => {
@@ -407,7 +409,12 @@ describe("disconnect handling", () => {
     expect(disconnectHandler).not.toBeNull();
     disconnectHandler!();
 
-    expect(clearRefs).toHaveBeenCalled();
+    expect(clearRefs).toHaveBeenCalledTimes(1);
+
+    // cleanupRecordingState must be called before clearRefs
+    const cleanupOrder = vi.mocked(cleanupRecordingState).mock.invocationCallOrder[0];
+    const clearRefsOrder = vi.mocked(clearRefs).mock.invocationCallOrder[0];
+    expect(cleanupOrder).toBeLessThan(clearRefsOrder);
   });
 
   it("allows reconnection after disconnect", async () => {

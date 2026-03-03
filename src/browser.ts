@@ -292,4 +292,5 @@ export function _resetForTesting(): void {
   browserPromise = null;
   pagePromise = null;
   cdpSessionPromise = null;
+  clearRefs();
 }
