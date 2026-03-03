@@ -20,6 +20,7 @@ import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
 import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
 import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+import { clearRefs } from "../ref-store.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
 
@@ -232,6 +233,7 @@ export class FlowRunner {
           waitUntil: step.waitUntil ?? "load",
           timeout: DEFAULT_TIMEOUT_MS,
         });
+        clearRefs();
         break;
       }
 
@@ -269,6 +271,7 @@ export class FlowRunner {
         if (resolved.type === "ref") {
           await hoverByBackendNodeId(resolved.backendNodeId);
         } else {
+          await page.waitForSelector(resolved.value, { visible: true });
           await page.hover(resolved.value);
         }
         break;

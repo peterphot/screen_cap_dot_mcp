@@ -70,6 +70,7 @@ vi.mock("../cdp-helpers.js", () => ({
 
 const mockResolveRef = vi.fn();
 
+// Mock ref-store — used transitively by validate-selector-or-ref.ts (which the runner imports)
 vi.mock("../ref-store.js", () => ({
   resolveRef: (...args: unknown[]) => mockResolveRef(...args),
   clearRefs: vi.fn(),
@@ -625,6 +626,31 @@ describe("FlowRunner", () => {
     expect(result.steps[0].success).toBe(false);
     expect(result.steps[0].error).toContain("Stale or invalid ref");
     expect(mockClickByBackendNodeId).not.toHaveBeenCalled();
+  });
+
+  it("clears refs after successful navigation", async () => {
+    const { clearRefs } = await import("../ref-store.js");
+
+    const flow: FlowDefinition = {
+      name: "nav-clears-refs",
+      steps: [{ action: "navigate", url: "https://example.com" }],
+    };
+
+    await runner.run(flow);
+
+    expect(clearRefs).toHaveBeenCalled();
+  });
+
+  it("waits for selector visibility before hover", async () => {
+    const flow: FlowDefinition = {
+      name: "hover-wait",
+      steps: [{ action: "hover", selector: ".menu" }],
+    };
+
+    await runner.run(flow);
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".menu", { visible: true });
+    expect(mockPage.hover).toHaveBeenCalledWith(".menu");
   });
 });
 
