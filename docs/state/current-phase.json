@@ -1,9 +1,9 @@
 {
-  "feature": "pp-13-a11y-ref-ids",
-  "phase": "BUILD_IN_PROGRESS",
-  "currentTask": "T001",
-  "status": "in_progress",
-  "lastUpdated": "2026-03-03T02:00:00Z",
+  "feature": "pp-14-ref-support-click-type-hover",
+  "phase": "BUILD_COMPLETE",
+  "currentTask": null,
+  "status": "complete",
+  "lastUpdated": "2026-03-03T08:02:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-13"
+  "sourceTicket": "PP-14"
 }
