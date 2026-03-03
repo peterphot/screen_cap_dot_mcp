@@ -284,7 +284,7 @@ describe("browser_navigate", () => {
     expect(mockPage.goto).not.toHaveBeenCalled();
   });
 
-  it("calls clearRefs() before navigating to invalidate stale refs", async () => {
+  it("calls clearRefs() after successful navigation to invalidate stale refs", async () => {
     const handler = getToolHandler(server, "browser_navigate");
     await handler(
       { url: "https://example.com/new-page" },
@@ -292,10 +292,10 @@ describe("browser_navigate", () => {
     );
 
     expect(mockClearRefs).toHaveBeenCalled();
-    // clearRefs should be called before page.goto
+    // clearRefs should be called after page.goto succeeds
     const clearRefsOrder = mockClearRefs.mock.invocationCallOrder[0];
     const gotoOrder = mockPage.goto.mock.invocationCallOrder[0];
-    expect(clearRefsOrder).toBeLessThan(gotoOrder);
+    expect(clearRefsOrder).toBeGreaterThan(gotoOrder);
   });
 });
 
@@ -543,6 +543,18 @@ describe("browser_hover", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Element detached");
+  });
+
+  it("returns descriptive error for stale ref", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      { ref: "e999" },
+      { signal: new AbortController().signal },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Stale or invalid ref");
+    expect(result.content[0].text).toContain("e999");
   });
 });
 

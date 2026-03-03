@@ -112,12 +112,12 @@ export function registerNavigationTools(server: McpServer): void {
           };
         }
 
-        clearRefs();
         const page = await ensurePage();
         await page.goto(parsed.href, {
           waitUntil: waitUntil ?? "load",
           timeout: DEFAULT_TIMEOUT_MS,
         });
+        clearRefs();
         const finalUrl = page.url();
         const title = await page.title();
         return {
