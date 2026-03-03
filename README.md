@@ -66,6 +66,21 @@ google-chrome --remote-debugging-port=9222 &
   --remote-debugging-port=9222
 ```
 
+If you already have Chrome running and want to open a separate debug instance:
+
+```bash
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug &
+
+# Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug &
+
+# Windows
+"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 --user-data-dir=%TEMP%\chrome-debug
+```
+
 ### 2. Configure Claude Code
 
 The repo includes a `.mcp.json` file, so Claude Code will automatically detect the server when you open the project. Just restart Claude Code after cloning and building.

@@ -182,3 +182,143 @@ Add to `~/.claude/settings.json` or project `.claude/settings.local.json`:
 6. Test scrolling: `browser_scroll` down -> `browser_screenshot` (verify below-fold content)
 7. Test recording: `browser_start_recording` -> navigate through pages -> `browser_stop_recording` -> verify MP4 file
 8. Test flow: Save a flow JSON, run `browser_run_flow`, verify output directory has video + screenshots + a11y
+
+---
+
+# Phase 2: Ref-Based Element Interaction
+
+## Context
+
+The AI agent can only interact with elements via CSS selectors (`browser_click`, `browser_type`, `browser_select`). But the information it gets from `browser_a11y_snapshot` is accessibility data — role, name, backendNodeId — not CSS selectors. This creates a gap between what the agent can **see** and what it can **act on**.
+
+In practice this means:
+- **URL navigation instead of SPA clicks** — the agent navigates by changing the URL (causing full page reloads) instead of clicking sidebar links, because it can't construct a CSS selector from the a11y data
+- **No custom dropdown interaction** — `browser_select` only works on native `<select>` elements; modern UI frameworks (MUI, Ant Design, Chakra) render custom listboxes that require clicking to open then clicking an option
+- **No hover support** — many UIs require hover to reveal menus, tooltips, or interactive elements
+
+The fix: assign short ref IDs to each element in the a11y snapshot, then let existing tools accept those refs as an alternative to CSS selectors. The `ensureCDPSession()` infrastructure already exists but is unused — we'll use it with `DOM.getContentQuads` and `Input.dispatchMouseEvent` to interact with elements by backendNodeId.
+
+## Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Modify existing tools vs new tools | Modify existing + add `browser_hover` | Fewer tools = less confusion for the AI agent. Adding `ref` as optional param keeps the API surface small. |
+| Ref format | Sequential "e1", "e2", "e3"... | Short, human-readable, avoids collision with numeric IDs. Reset on each snapshot. |
+| Ref placement in output | Inline on each a11y node | Agent sees ref next to role/name — no cross-referencing a separate map. |
+| Ref lifecycle | Ephemeral — valid only until next snapshot or navigation | Simplest model. Stale refs return a clear error suggesting a new snapshot. |
+| Click coordinates | Center of first content quad from `DOM.getContentQuads` | More reliable than `DOM.getBoxModel` for transformed elements or scroll containers. |
+| Scroll before click | `DOM.scrollIntoViewIfNeeded` | CDP command handles all scroll containers automatically. |
+| Internal fields in a11y output | Strip `backendNodeId`, `loaderId` | These are internal Puppeteer noise; replaced by the cleaner `ref` field. |
+
+## Files to Create
+
+### `src/ref-store.ts` — Ref ID storage (leaf module, no deps)
+Module-level `Map<string, number>` mapping ref IDs → backendNodeId.
+- `clearRefs()` — resets map + counter. Called on each snapshot and on navigation.
+- `allocateRef(backendNodeId: number): string` — assigns next sequential ref "eN", stores mapping.
+- `resolveRef(ref: string): number | undefined` — looks up backendNodeId, returns `undefined` if stale/invalid.
+- `hasRefs(): boolean` — whether any refs have been allocated.
+
+### `src/cdp-helpers.ts` — CDP interaction primitives
+Uses `ensureCDPSession()` from `browser.ts` to make direct CDP protocol calls.
+- `getElementCenter(backendNodeId): Promise<{x, y}>` — `DOM.scrollIntoViewIfNeeded` then `DOM.getContentQuads`, returns center of first quad.
+- `clickByBackendNodeId(backendNodeId): Promise<{x, y}>` — scrolls into view, gets center, dispatches `mousePressed` + `mouseReleased` via `Input.dispatchMouseEvent`.
+- `typeByBackendNodeId(backendNodeId, text, clear?): Promise<void>` — `DOM.focus`, optionally Ctrl+A to select all, then `Input.insertText`.
+- `hoverByBackendNodeId(backendNodeId): Promise<{x, y}>` — scrolls into view, dispatches `mouseMoved`.
+
+### `src/__tests__/ref-store.test.ts` — Unit tests for ref store
+### `src/__tests__/cdp-helpers.test.ts` — Unit tests for CDP helpers (mock `ensureCDPSession`)
+
+## Files to Modify
+
+### `src/tools/observation.ts` — Enhance a11y snapshot with refs
+- Import `clearRefs`, `allocateRef` from `ref-store.ts`
+- Add `annotateTreeWithRefs(node)` function: recursively walks the a11y tree, assigns ref IDs to nodes with `backendNodeId`, strips internal fields (`backendNodeId`, `loaderId`)
+- In `browser_a11y_snapshot` handler: call `clearRefs()` before traversal, annotate tree, serialize annotated version
+- Update tool description to mention ref IDs
+
+Example output after change:
+```json
+{"role": "RootWebArea", "name": "My App", "ref": "e1", "children": [
+  {"role": "link", "name": "Dashboard", "ref": "e2"},
+  {"role": "combobox", "name": "Filter", "value": "All", "ref": "e3"}
+]}
+```
+
+### `src/tools/navigation.ts` — Add ref to click/type, add hover, clear refs on navigate
+- **`browser_click`**: add optional `ref` param alongside `selector`. Validate exactly one provided. Ref path: `resolveRef()` → `clickByBackendNodeId()`. Selector path: unchanged.
+- **`browser_type`**: same pattern — optional `ref`, validate, use `typeByBackendNodeId()` for ref path.
+- **`browser_hover`** (new tool): accepts `selector` or `ref`. Selector path: `page.hover()`. Ref path: `hoverByBackendNodeId()`.
+- **`browser_navigate`**: call `clearRefs()` before `page.goto()` — navigation invalidates all refs.
+- Tool count: 8 → 9
+
+### `src/tools/scrolling.ts` — Add ref to scroll_to_element
+- **`browser_scroll_to_element`**: add optional `ref` param. Ref path: `DOM.scrollIntoViewIfNeeded` via CDP. Selector path: unchanged.
+
+### `src/browser.ts` — Clear refs on tab switch
+- In `switchToPage()`: import and call `clearRefs()` alongside the existing `cdpSession = null`.
+
+### `src/flow/schema.ts` — Update flow DSL
+- `ClickStep`, `TypeStep`: add optional `ref` field, use `.refine()` to enforce exactly one of `selector`/`ref`.
+- Add `HoverStep` (action: "hover", selector or ref, label).
+- Add `HoverStep` to `FlowStepSchema` union.
+
+### `src/flow/runner.ts` — Handle ref-based steps + hover action
+- Click/type cases: check for `step.ref`, resolve via `resolveRef()`, use CDP helpers.
+- Add `case "hover"` with same selector/ref pattern.
+
+### Test files to update
+- `src/__tests__/observation.test.ts` — verify refs in output, verify internal fields stripped
+- `src/__tests__/navigation.test.ts` — test ref paths for click/type, hover tool tests, refs cleared on navigate, tool count 8→9
+- `src/__tests__/scrolling.test.ts` — test ref path for scroll_to_element
+- `src/__tests__/flow-schema.test.ts` — test ref variants for click/type, hover step validation
+- `src/__tests__/flow-runner.test.ts` — test ref-based step execution, hover action
+
+## Implementation Order
+
+1. `src/ref-store.ts` + `src/__tests__/ref-store.test.ts` — zero dependencies, pure logic
+2. `src/cdp-helpers.ts` + `src/__tests__/cdp-helpers.test.ts` — depends on browser.ts
+3. `src/tools/observation.ts` + test updates — depends on ref-store
+4. `src/tools/navigation.ts` + test updates — depends on ref-store + cdp-helpers
+5. `src/tools/scrolling.ts` + test updates — depends on ref-store + cdp-helpers
+6. `src/browser.ts` — add `clearRefs()` to `switchToPage()`
+7. `src/flow/schema.ts` + test updates — schema only
+8. `src/flow/runner.ts` + test updates — depends on ref-store + cdp-helpers
+9. Full test suite: `npm test`
+10. Build verification: `npm run build`
+
+## Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Element is `display:none` or zero-size | `DOM.getContentQuads` returns empty quads → throw descriptive error |
+| DOM changed since snapshot (SPA re-render) | CDP call fails with "Could not find node" → catch and suggest new snapshot |
+| Tab switch | `switchToPage()` calls `clearRefs()` alongside CDP session reset |
+| Both selector and ref provided | Validation error: "provide exactly one" |
+| Neither selector nor ref provided | Validation error: "provide exactly one" |
+| iframes | Out of scope — a11y snapshot with `interestingOnly: true` doesn't traverse iframes |
+| Zod `.refine()` on steps | Already using `z.union()` (not discriminated), so `ZodEffects` from refine is compatible |
+
+## Updated Tool Count
+
+After implementation: **24 tools** across 6 groups (was 23).
+
+| Group | Before | After | Change |
+|-------|--------|-------|--------|
+| Navigation | 8 | 9 | +`browser_hover` |
+| Observation | 4 | 4 | a11y snapshot enhanced (same tool count) |
+| Scrolling | 2 | 2 | scroll_to_element enhanced (same tool count) |
+| Waiting | 3 | 3 | unchanged |
+| Recording | 3 | 3 | unchanged |
+| Flow | 3 | 3 | unchanged |
+
+## Verification
+
+1. `npm test` — all existing + new tests pass
+2. `npm run build` — TypeScript compiles cleanly
+3. Manual E2E test:
+   - Connect to Chrome → `browser_a11y_snapshot` → verify ref IDs in output (e.g., `"ref": "e3"`)
+   - `browser_click` with `ref: "e3"` → verify SPA navigation (no full page reload)
+   - `browser_hover` with `ref: "e5"` → verify hover state triggers
+   - `browser_type` with `ref: "e7"` → verify text input into custom component
+   - Navigate to new page → attempt old ref → verify clear error message

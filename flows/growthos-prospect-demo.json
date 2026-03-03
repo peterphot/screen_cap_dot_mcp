@@ -1,0 +1,134 @@
+{
+  "name": "GrowthOS Prospect Demo",
+  "description": "A guided walkthrough of Mutinex GrowthOS for prospects. Covers the Growth Center with MAITE AI and Power Plays, Channel ROI performance analysis, Investment Levels saturation curves, Sales Drivers decomposition, and Scenario Builder for planning and optimization.",
+  "recording": { "enabled": true, "format": "mp4" },
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://growthos.mutinex.co/growth-center",
+      "waitUntil": "networkidle2",
+      "label": "01-growth-center"
+    },
+    { "action": "wait", "strategy": "smart", "timeout": 10000 },
+    {
+      "action": "screenshot",
+      "label": "01-growth-center-welcome"
+    },
+    {
+      "action": "a11y_snapshot",
+      "label": "01-growth-center-structure"
+    },
+
+    {
+      "action": "scroll",
+      "direction": "down",
+      "amount": 500,
+      "label": "scroll-to-power-plays"
+    },
+    { "action": "sleep", "duration": 1000 },
+    {
+      "action": "screenshot",
+      "label": "02-power-plays-ai-recommendations"
+    },
+
+    {
+      "action": "scroll",
+      "direction": "down",
+      "amount": 500,
+      "label": "scroll-to-scenario-cta"
+    },
+    { "action": "sleep", "duration": 1000 },
+    {
+      "action": "screenshot",
+      "label": "03-scenario-builder-cta-and-dashboards"
+    },
+
+    {
+      "action": "navigate",
+      "url": "https://growthos.mutinex.co/channel-roi",
+      "waitUntil": "networkidle2",
+      "label": "04-channel-roi"
+    },
+    { "action": "wait", "strategy": "smart", "timeout": 15000 },
+    {
+      "action": "screenshot",
+      "label": "04-channel-roi-kpis-and-insights"
+    },
+    {
+      "action": "a11y_snapshot",
+      "label": "04-channel-roi-structure"
+    },
+
+    {
+      "action": "scroll",
+      "direction": "down",
+      "amount": 500,
+      "label": "scroll-to-bubble-chart"
+    },
+    { "action": "sleep", "duration": 1000 },
+    {
+      "action": "screenshot",
+      "label": "05-channel-effectiveness-bubble-chart"
+    },
+
+    {
+      "action": "navigate",
+      "url": "https://growthos.mutinex.co/investment-levels",
+      "waitUntil": "networkidle2",
+      "label": "06-investment-levels"
+    },
+    { "action": "wait", "strategy": "smart", "timeout": 15000 },
+    {
+      "action": "screenshot",
+      "label": "06-investment-levels-overview"
+    },
+    {
+      "action": "a11y_snapshot",
+      "label": "06-investment-levels-structure"
+    },
+
+    {
+      "action": "scroll",
+      "direction": "down",
+      "amount": 500,
+      "label": "scroll-to-saturation-curves"
+    },
+    { "action": "sleep", "duration": 1000 },
+    {
+      "action": "screenshot",
+      "label": "07-saturation-curves-full"
+    },
+
+    {
+      "action": "navigate",
+      "url": "https://growthos.mutinex.co/sales-drivers",
+      "waitUntil": "networkidle2",
+      "label": "08-sales-drivers"
+    },
+    { "action": "wait", "strategy": "smart", "timeout": 15000 },
+    {
+      "action": "screenshot",
+      "label": "08-sales-drivers-composition"
+    },
+    {
+      "action": "a11y_snapshot",
+      "label": "08-sales-drivers-structure"
+    },
+
+    {
+      "action": "navigate",
+      "url": "https://growthos.mutinex.co/scenarios-v3/all",
+      "waitUntil": "networkidle2",
+      "label": "09-scenario-builder"
+    },
+    { "action": "wait", "strategy": "smart", "timeout": 15000 },
+    {
+      "action": "screenshot",
+      "label": "09-scenario-builder-list"
+    },
+    {
+      "action": "a11y_snapshot",
+      "label": "09-scenario-builder-structure"
+    }
+  ]
+}
