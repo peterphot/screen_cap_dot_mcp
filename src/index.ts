@@ -16,6 +16,7 @@ import { registerObservationTools } from "./tools/observation.js";
 import { registerWaitingTools } from "./tools/waiting.js";
 import { registerScrollingTools } from "./tools/scrolling.js";
 import { registerRecordingTools } from "./tools/recording.js";
+import { registerFlowTools } from "./tools/flow.js";
 import { stopActiveRecording } from "./recording-state.js";
 
 // ── Server Setup ────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ registerObservationTools(server);
 registerWaitingTools(server);
 registerScrollingTools(server);
 registerRecordingTools(server);
+registerFlowTools(server);
 
 // ── Start Server ────────────────────────────────────────────────────────
 

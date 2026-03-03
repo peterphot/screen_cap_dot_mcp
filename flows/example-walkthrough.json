@@ -1,0 +1,13 @@
+{
+  "name": "Example Walkthrough",
+  "description": "Navigate to a page, wait for it to load, capture screenshots and accessibility data",
+  "recording": { "enabled": true, "format": "mp4" },
+  "steps": [
+    { "action": "navigate", "url": "https://example.com", "label": "nav-home" },
+    { "action": "wait", "strategy": "smart", "timeout": 30000 },
+    { "action": "screenshot", "label": "homepage-loaded" },
+    { "action": "scroll", "direction": "down", "amount": 500 },
+    { "action": "screenshot", "label": "below-fold" },
+    { "action": "a11y_snapshot", "label": "page-structure" }
+  ]
+}
