@@ -140,6 +140,8 @@ beforeEach(async () => {
   mockSwitchToPage.mockResolvedValue(mockPage);
 
   // Create a fresh server and register tools for each test
+  // Set ALLOW_EVALUATE so browser_evaluate is registered (conditional registration)
+  process.env.ALLOW_EVALUATE = "true";
   server = new McpServer({ name: "test-server", version: "1.0.0" });
   const { registerNavigationTools } = await import("../tools/navigation.js");
   registerNavigationTools(server);
@@ -636,19 +638,16 @@ describe("browser_evaluate", () => {
     }
   });
 
-  it("returns error when ALLOW_EVALUATE is not set (default-deny)", async () => {
+  it("is not registered when ALLOW_EVALUATE is not set (default-deny)", async () => {
     const original = process.env.ALLOW_EVALUATE;
     delete process.env.ALLOW_EVALUATE;
     try {
-      const handler = getToolHandler(server, "browser_evaluate");
-      const result = await handler(
-        { script: "1+1" },
-        { signal: new AbortController().signal },
-      );
+      const noEvalServer = new McpServer({ name: "test-no-eval", version: "1.0.0" });
+      const { registerNavigationTools } = await import("../tools/navigation.js");
+      registerNavigationTools(noEvalServer);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("browser_evaluate is disabled");
-      expect(mockPage.evaluate).not.toHaveBeenCalled();
+      const tools = getRegisteredTools(noEvalServer);
+      expect(Object.keys(tools)).not.toContain("browser_evaluate");
     } finally {
       if (original === undefined) {
         delete process.env.ALLOW_EVALUATE;
@@ -658,19 +657,16 @@ describe("browser_evaluate", () => {
     }
   });
 
-  it("returns error when ALLOW_EVALUATE=false", async () => {
+  it("is not registered when ALLOW_EVALUATE=false", async () => {
     const original = process.env.ALLOW_EVALUATE;
     process.env.ALLOW_EVALUATE = "false";
     try {
-      const handler = getToolHandler(server, "browser_evaluate");
-      const result = await handler(
-        { script: "1+1" },
-        { signal: new AbortController().signal },
-      );
+      const noEvalServer = new McpServer({ name: "test-no-eval", version: "1.0.0" });
+      const { registerNavigationTools } = await import("../tools/navigation.js");
+      registerNavigationTools(noEvalServer);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("browser_evaluate is disabled");
-      expect(mockPage.evaluate).not.toHaveBeenCalled();
+      const tools = getRegisteredTools(noEvalServer);
+      expect(Object.keys(tools)).not.toContain("browser_evaluate");
     } finally {
       if (original === undefined) {
         delete process.env.ALLOW_EVALUATE;

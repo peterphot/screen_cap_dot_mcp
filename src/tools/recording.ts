@@ -16,8 +16,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { mkdir, writeFile, realpath } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { join } from "node:path";
+import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { ensurePage } from "../browser.js";
 import logger from "../util/logger.js";
 import {
@@ -31,50 +31,18 @@ import {
 /**
  * Read the allowed recording output directory.
  * Read lazily so env var changes and test overrides take effect.
- * Defaults to /tmp/screen-cap-recordings.
- * Rejects filesystem root or empty values to prevent vacuous confinement.
  */
 function getRecordingDir(): string {
-  const raw = process.env.RECORDING_DIR ?? "/tmp/screen-cap-recordings";
-  const resolved = resolve(raw);
-  if (resolved === "/") {
-    throw new Error("RECORDING_DIR must not resolve to the filesystem root.");
-  }
-  return resolved;
-}
-
-/**
- * Validate that a resolved path is within the allowed directory.
- * Performs a prefix check to prevent path traversal.
- */
-function isWithinDir(resolvedPath: string, allowedDir: string): boolean {
-  return resolvedPath.startsWith(allowedDir + "/") || resolvedPath === allowedDir;
+  return resolveConfigDir("RECORDING_DIR", "/tmp/screen-cap-recordings");
 }
 
 /**
  * Validate and confine a path within the recording directory.
- * Returns the resolved path or an error message.
  */
 async function confinePathToRecordingDir(
   filePath: string,
 ): Promise<{ resolvedPath: string } | { error: string }> {
-  const recordingDir = getRecordingDir();
-  const resolvedPath = resolve(filePath);
-
-  if (!isWithinDir(resolvedPath, recordingDir)) {
-    return { error: `Path must be within ${recordingDir}` };
-  }
-
-  await mkdir(dirname(resolvedPath), { recursive: true });
-
-  // Post-mkdir symlink check
-  const realDir = await realpath(dirname(resolvedPath));
-  const realRecordingDir = await realpath(recordingDir);
-  if (!isWithinDir(realDir, realRecordingDir)) {
-    return { error: `Path must be within ${recordingDir} (symlink detected)` };
-  }
-
-  return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
+  return confinePath(filePath, getRecordingDir());
 }
 
 // ── Tool registration ───────────────────────────────────────────────────
@@ -337,7 +305,7 @@ export function registerRecordingTools(server: McpServer): void {
               throw new Error(pathResult.error);
             }
             const buffer = (await page.screenshot()) as Buffer;
-            await writeFile(pathResult.resolvedPath, buffer);
+            await safeWriteFile(pathResult.resolvedPath, buffer);
             return pathResult.resolvedPath;
           })(),
           (async (): Promise<string | undefined> => {
@@ -348,7 +316,7 @@ export function registerRecordingTools(server: McpServer): void {
                 return undefined;
               }
               const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
-              await writeFile(pathResult.resolvedPath, JSON.stringify(snapshot, null, 2));
+              await safeWriteFile(pathResult.resolvedPath, JSON.stringify(snapshot, null, 2));
               return pathResult.resolvedPath;
             } catch {
               logger.warn(`Failed to capture a11y snapshot for key moment "${label}"`);

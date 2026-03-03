@@ -33,6 +33,19 @@ vi.mock("node:fs/promises", () => ({
 
 const RESOLVED_FLOWS_DIR = resolve("flows");
 
+// Mock path-confinement module
+const mockConfinePath = vi.fn();
+const mockSafeWriteFile = vi.fn();
+
+vi.mock("../util/path-confinement.js", () => ({
+  resolveConfigDir: (_envVar: string, defaultPath: string) => {
+    const raw = process.env.FLOWS_DIR ?? defaultPath;
+    return raw.startsWith("/") ? raw : resolve(raw);
+  },
+  confinePath: (...args: unknown[]) => mockConfinePath(...args),
+  safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
+}));
+
 const mockFlowRunnerRun = vi.fn();
 
 vi.mock("../flow/runner.js", () => ({
@@ -81,8 +94,13 @@ beforeEach(async () => {
 
   mockMkdir.mockResolvedValue(undefined);
   mockWriteFile.mockResolvedValue(undefined);
+  mockSafeWriteFile.mockResolvedValue(undefined);
   // Default realpath mock: return the path unchanged (no symlinks)
   mockRealpath.mockImplementation(async (p: string) => p);
+  // Default confinePath mock: succeed and return the path as-is
+  mockConfinePath.mockImplementation((filePath: string) =>
+    Promise.resolve({ resolvedPath: filePath.startsWith("/") ? filePath : resolve(filePath) }),
+  );
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -314,6 +332,20 @@ describe("Flow tools registration", () => {
       expect(flows).toHaveLength(1);
       expect(flows[0].name).toBe("(unreadable)");
     });
+
+    it("handles valid JSON that fails schema validation", async () => {
+      mockReaddir.mockResolvedValue(["bad-schema.json"]);
+      // Valid JSON, but missing required 'steps' array
+      mockReadFile.mockResolvedValue(JSON.stringify({ name: "No Steps" }));
+
+      const handler = getToolHandler(server, "browser_list_flows");
+      const result = await handler({});
+
+      const flows = JSON.parse(result.content[0].text);
+      expect(flows).toHaveLength(1);
+      expect(flows[0].name).toBe("(invalid)");
+      expect(flows[0].steps).toBe(0);
+    });
   });
 
   // ── browser_save_flow ──────────────────────────────────────────────
@@ -332,11 +364,14 @@ describe("Flow tools registration", () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toContain("My Test Flow");
       expect(result.content[0].text).toContain("my_test_flow.json");
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      expect(mockConfinePath).toHaveBeenCalledWith(
+        expect.stringContaining("my_test_flow.json"),
+        RESOLVED_FLOWS_DIR,
+      );
+      expect(mockSafeWriteFile).toHaveBeenCalledWith(
         expect.stringContaining("my_test_flow.json"),
         expect.any(String),
       );
-      expect(mockMkdir).toHaveBeenCalledWith(RESOLVED_FLOWS_DIR, { recursive: true });
     });
 
     it("rejects invalid flow definition", async () => {
@@ -361,7 +396,7 @@ describe("Flow tools registration", () => {
     });
 
     it("catches file system errors", async () => {
-      mockWriteFile.mockRejectedValue(new Error("Disk full"));
+      mockSafeWriteFile.mockRejectedValue(new Error("Disk full"));
       const handler = getToolHandler(server, "browser_save_flow");
 
       const result = await handler({
@@ -409,12 +444,9 @@ describe("Flow tools registration", () => {
     });
 
     it("detects symlink escape on save", async () => {
-      // confinePathToFlowDir calls realpath twice:
-      //   1. realpath(dirname(resolvedPath)) — simulate symlink escaping to /etc
-      //   2. realpath(flowsDir) — return the real flows dir
-      mockRealpath
-        .mockResolvedValueOnce("/etc")
-        .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
+      mockConfinePath.mockResolvedValueOnce({
+        error: `Path must be within ${RESOLVED_FLOWS_DIR} (symlink detected)`,
+      });
 
       const handler = getToolHandler(server, "browser_save_flow");
       const result = await handler({
@@ -429,9 +461,9 @@ describe("Flow tools registration", () => {
     });
 
     it("detects symlink escape on run", async () => {
-      mockRealpath
-        .mockResolvedValueOnce("/etc")
-        .mockResolvedValueOnce(RESOLVED_FLOWS_DIR);
+      mockConfinePath.mockResolvedValueOnce({
+        error: `Path must be within ${RESOLVED_FLOWS_DIR} (symlink detected)`,
+      });
 
       const handler = getToolHandler(server, "browser_run_flow");
       const result = await handler({ name: "legit" });

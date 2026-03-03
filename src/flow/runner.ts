@@ -11,15 +11,15 @@
  * 7. Stops recording at end
  */
 
-import { mkdir, writeFile, realpath } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { join } from "node:path";
+import { resolveConfigDir, confineDir, safeWriteFile } from "../util/path-confinement.js";
 import type { Page, ScreenRecorder } from "puppeteer-core";
 import { ensurePage, DEFAULT_TIMEOUT_MS } from "../browser.js";
 import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
-import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
-import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+import { performClick, performType, performHover } from "../util/actions.js";
+import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs } from "../ref-store.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
@@ -27,55 +27,15 @@ import { clearRefs } from "../ref-store.js";
 /**
  * Read the allowed flow output directory.
  * Read lazily so env var changes and test overrides take effect.
- * Defaults to /tmp/screen-cap-flows.
  */
 function getFlowOutputDir(): string {
-  const raw = process.env.FLOW_OUTPUT_DIR ?? "/tmp/screen-cap-flows";
-  const resolved = resolve(raw);
-  if (resolved === "/") {
-    throw new Error("FLOW_OUTPUT_DIR must not resolve to the filesystem root.");
-  }
-  return resolved;
+  return resolveConfigDir("FLOW_OUTPUT_DIR", "/tmp/screen-cap-flows");
 }
 
-function isWithinDir(resolvedPath: string, allowedDir: string): boolean {
-  return resolvedPath.startsWith(allowedDir + "/") || resolvedPath === allowedDir;
-}
-
-async function confinePathToFlowDir(
-  filePath: string,
-): Promise<{ resolvedPath: string } | { error: string }> {
-  const flowDir = getFlowOutputDir();
-  const resolvedPath = resolve(filePath);
-
-  if (!isWithinDir(resolvedPath, flowDir)) {
-    return { error: `Path must be within ${flowDir}` };
-  }
-
-  await mkdir(dirname(resolvedPath), { recursive: true });
-
-  const realDir = await realpath(dirname(resolvedPath));
-  const realFlowDir = await realpath(flowDir);
-  if (!isWithinDir(realDir, realFlowDir)) {
-    return { error: `Path must be within ${flowDir} (symlink detected)` };
-  }
-
-  return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
-}
-
-// ── URL validation ────────────────────────────────────────────────────────
-
-function validateNavigationUrl(url: string): { href: string } | { error: string } {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { error: `Invalid URL "${url}"` };
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { error: `Only http: and https: URLs are allowed, got "${parsed.protocol}"` };
-  }
-  return { href: parsed.href };
+async function confineDirToFlowOutputDir(
+  dirPath: string,
+): Promise<{ resolvedDir: string } | { error: string }> {
+  return confineDir(dirPath, getFlowOutputDir());
 }
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -119,12 +79,11 @@ export class FlowRunner {
     const safeName = flow.name.replace(/[^a-zA-Z0-9_-]/g, "_");
     const flowDir = getFlowOutputDir();
     const rawOutputDir = join(flowDir, `${safeName}-${timestamp}`);
-    const dirResult = await confinePathToFlowDir(join(rawOutputDir, "placeholder"));
+    const dirResult = await confineDirToFlowOutputDir(rawOutputDir);
     if ("error" in dirResult) {
       throw new Error(dirResult.error);
     }
-    const outputDir = dirname(dirResult.resolvedPath);
-    await mkdir(outputDir, { recursive: true });
+    const outputDir = dirResult.resolvedDir;
 
     logger.info(`Flow "${flow.name}" started — output: ${outputDir}`);
 
@@ -177,7 +136,7 @@ export class FlowRunner {
         try {
           const errScreenshot = join(outputDir, `error-step-${i}.png`);
           const buffer = (await page.screenshot()) as Buffer;
-          await writeFile(errScreenshot, buffer);
+          await safeWriteFile(errScreenshot, buffer);
           result.screenshotPath = errScreenshot;
         } catch {
           // Ignore screenshot failure during error handling
@@ -206,7 +165,7 @@ export class FlowRunner {
       totalDurationMs,
       steps: stepResults,
     };
-    await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    await safeWriteFile(manifestPath, JSON.stringify(manifest, null, 2));
 
     logger.info(`Flow "${flow.name}" completed in ${totalDurationMs}ms`);
 
@@ -237,46 +196,17 @@ export class FlowRunner {
         break;
       }
 
-      case "click": {
-        const resolved = validateSelectorOrRef(step.selector, step.ref);
-        if ("error" in resolved) throw new Error(resolved.error);
-        if (resolved.type === "ref") {
-          await clickByBackendNodeId(resolved.backendNodeId);
-        } else {
-          await page.waitForSelector(resolved.value, { visible: true });
-          await page.click(resolved.value);
-        }
+      case "click":
+        await performClick(step.selector, step.ref, page);
         break;
-      }
 
-      case "type": {
-        const resolved = validateSelectorOrRef(step.selector, step.ref);
-        if ("error" in resolved) throw new Error(resolved.error);
-        if (resolved.type === "ref") {
-          await typeByBackendNodeId(resolved.backendNodeId, step.text, step.clear);
-        } else {
-          await page.waitForSelector(resolved.value, { visible: true });
-          if (step.clear) {
-            await page.click(resolved.value, { clickCount: 3 });
-          } else {
-            await page.click(resolved.value);
-          }
-          await page.type(resolved.value, step.text);
-        }
+      case "type":
+        await performType(step.text, step.selector, step.ref, step.clear, page);
         break;
-      }
 
-      case "hover": {
-        const resolved = validateSelectorOrRef(step.selector, step.ref);
-        if ("error" in resolved) throw new Error(resolved.error);
-        if (resolved.type === "ref") {
-          await hoverByBackendNodeId(resolved.backendNodeId);
-        } else {
-          await page.waitForSelector(resolved.value, { visible: true });
-          await page.hover(resolved.value);
-        }
+      case "hover":
+        await performHover(step.selector, step.ref, page);
         break;
-      }
 
       case "wait":
         await this.executeWait(page, step);
@@ -305,10 +235,10 @@ export class FlowRunner {
           const el = await page.$(step.selector);
           if (!el) throw new Error(`Element not found: ${step.selector}`);
           const buffer = (await el.screenshot()) as Buffer;
-          await writeFile(screenshotPath, buffer);
+          await safeWriteFile(screenshotPath, buffer);
         } else {
           const buffer = (await page.screenshot({ fullPage: step.fullPage ?? false })) as Buffer;
-          await writeFile(screenshotPath, buffer);
+          await safeWriteFile(screenshotPath, buffer);
         }
         break;
       }
@@ -320,7 +250,7 @@ export class FlowRunner {
         const snapshot = await page.accessibility.snapshot({
           interestingOnly: step.interestingOnly ?? true,
         });
-        await writeFile(a11yPath, JSON.stringify(snapshot, null, 2));
+        await safeWriteFile(a11yPath, JSON.stringify(snapshot, null, 2));
         break;
       }
 
@@ -328,6 +258,7 @@ export class FlowRunner {
         if (process.env.ALLOW_EVALUATE !== "true") {
           throw new Error("evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution.");
         }
+        logger.warn(`[AUDIT] Flow evaluate step. Script length: ${step.script.length} chars`);
         await page.evaluate(step.script);
         break;
 
@@ -364,6 +295,7 @@ export class FlowRunner {
         if (process.env.ALLOW_EVALUATE !== "true") {
           throw new Error("wait/function is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution.");
         }
+        logger.warn(`[AUDIT] Flow waitForFunction step. Function length: ${step.function.length} chars`);
         await page.waitForFunction(step.function, { timeout });
         break;
     }
@@ -378,26 +310,32 @@ export class FlowRunner {
     label: string,
   ): Promise<{ screenshotPath?: string; a11yPath?: string }> {
     const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const result: { screenshotPath?: string; a11yPath?: string } = {};
 
-    try {
-      const screenshotPath = join(outputDir, `${stepIndex}-${safeLabel}.png`);
-      const buffer = (await page.screenshot()) as Buffer;
-      await writeFile(screenshotPath, buffer);
-      result.screenshotPath = screenshotPath;
-    } catch {
+    const [screenshotResult, a11yResult] = await Promise.allSettled([
+      (async () => {
+        const screenshotPath = join(outputDir, `${stepIndex}-${safeLabel}.png`);
+        const buffer = (await page.screenshot()) as Buffer;
+        await safeWriteFile(screenshotPath, buffer);
+        return screenshotPath;
+      })(),
+      (async () => {
+        const a11yPath = join(outputDir, `${stepIndex}-${safeLabel}-a11y.json`);
+        const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
+        await safeWriteFile(a11yPath, JSON.stringify(snapshot, null, 2));
+        return a11yPath;
+      })(),
+    ]);
+
+    if (screenshotResult.status === "rejected") {
       logger.warn(`Failed to capture screenshot for step ${stepIndex} ("${label}")`);
     }
-
-    try {
-      const a11yPath = join(outputDir, `${stepIndex}-${safeLabel}-a11y.json`);
-      const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
-      await writeFile(a11yPath, JSON.stringify(snapshot, null, 2));
-      result.a11yPath = a11yPath;
-    } catch {
+    if (a11yResult.status === "rejected") {
       logger.warn(`Failed to capture a11y for step ${stepIndex} ("${label}")`);
     }
 
-    return result;
+    return {
+      screenshotPath: screenshotResult.status === "fulfilled" ? screenshotResult.value : undefined,
+      a11yPath: a11yResult.status === "fulfilled" ? a11yResult.value : undefined,
+    };
   }
 }

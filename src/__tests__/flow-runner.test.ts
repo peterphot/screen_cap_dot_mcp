@@ -38,15 +38,29 @@ vi.mock("../util/wait-strategies.js", () => ({
   smartWait: (...args: unknown[]) => mockSmartWait(...args),
 }));
 
-const mockWriteFile = vi.fn();
 const mockMkdir = vi.fn();
 const mockRealpath = vi.fn();
+const mockOpen = vi.fn();
 
 vi.mock("node:fs/promises", () => ({
-  writeFile: (...args: unknown[]) => mockWriteFile(...args),
   mkdir: (...args: unknown[]) => mockMkdir(...args),
   realpath: (...args: unknown[]) => mockRealpath(...args),
+  open: (...args: unknown[]) => mockOpen(...args),
 }));
+
+// Mock safeWriteFile via the path-confinement module (used by runner for all writes)
+const mockSafeWriteFile = vi.fn();
+const mockConfineDir = vi.fn();
+
+vi.mock("../util/path-confinement.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../util/path-confinement.js")>();
+  return {
+    ...actual,
+    resolveConfigDir: actual.resolveConfigDir,
+    confineDir: (...args: unknown[]) => mockConfineDir(...args),
+    safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
+  };
+});
 
 vi.mock("../util/logger.js", () => ({
   default: {
@@ -142,9 +156,13 @@ beforeEach(() => {
 
   mockEnsurePage.mockResolvedValue(mockPage);
   mockSmartWait.mockResolvedValue({ elapsedMs: 100 });
-  mockWriteFile.mockResolvedValue(undefined);
+  mockSafeWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
   mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
+  // confineDir succeeds by default — returns the dir path as-is
+  mockConfineDir.mockImplementation((dirPath: string) =>
+    Promise.resolve({ resolvedDir: dirPath }),
+  );
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -180,7 +198,7 @@ describe("FlowRunner", () => {
 
     expect(result.outputDir).toContain(FLOW_DIR);
     expect(result.outputDir).toMatch(/test_flow-\d{4}-\d{2}-\d{2}T/);
-    expect(mockMkdir).toHaveBeenCalledWith(result.outputDir, { recursive: true });
+    expect(mockConfineDir).toHaveBeenCalledWith(result.outputDir, FLOW_DIR);
   });
 
   it("writes manifest.json at end of flow", async () => {
@@ -192,7 +210,7 @@ describe("FlowRunner", () => {
     const result = await runner.run(flow);
 
     expect(result.manifestPath).toContain("manifest.json");
-    const manifestCall = mockWriteFile.mock.calls.find(
+    const manifestCall = mockSafeWriteFile.mock.calls.find(
       (call: unknown[]) => (call[0] as string).includes("manifest.json"),
     );
     expect(manifestCall).toBeDefined();
@@ -374,7 +392,7 @@ describe("FlowRunner", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(mockPage.screenshot).toHaveBeenCalledWith({ fullPage: false });
-    const writeCall = mockWriteFile.mock.calls.find(
+    const writeCall = mockSafeWriteFile.mock.calls.find(
       (call: unknown[]) => (call[0] as string).includes("hero.png"),
     );
     expect(writeCall).toBeDefined();
@@ -406,7 +424,7 @@ describe("FlowRunner", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(mockPage.accessibility.snapshot).toHaveBeenCalledWith({ interestingOnly: true });
-    const writeCall = mockWriteFile.mock.calls.find(
+    const writeCall = mockSafeWriteFile.mock.calls.find(
       (call: unknown[]) => (call[0] as string).includes("page-structure.json"),
     );
     expect(writeCall).toBeDefined();
@@ -801,11 +819,8 @@ describe("path confinement", () => {
   });
 
   it("rejects symlink escape from FLOW_OUTPUT_DIR", async () => {
-    let callCount = 0;
-    mockRealpath.mockImplementation(async (p: string) => {
-      callCount++;
-      if (callCount === 1) return "/etc/somewhere-else";
-      return p;
+    mockConfineDir.mockResolvedValueOnce({
+      error: "Path must be within /tmp/screen-cap-flows (symlink detected)",
     });
 
     const flow: FlowDefinition = {
@@ -833,7 +848,7 @@ describe("default label uniqueness", () => {
 
     await runner.run(flow);
 
-    const screenshotWrites = mockWriteFile.mock.calls.filter(
+    const screenshotWrites = mockSafeWriteFile.mock.calls.filter(
       (call: unknown[]) => (call[0] as string).endsWith(".png") && !(call[0] as string).includes("manifest"),
     );
 
@@ -856,7 +871,7 @@ describe("default label uniqueness", () => {
 
     await runner.run(flow);
 
-    const a11yWrites = mockWriteFile.mock.calls.filter(
+    const a11yWrites = mockSafeWriteFile.mock.calls.filter(
       (call: unknown[]) => (call[0] as string).endsWith(".json") && !(call[0] as string).includes("manifest"),
     );
 

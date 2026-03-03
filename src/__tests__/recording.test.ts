@@ -35,6 +35,19 @@ vi.mock("node:fs/promises", () => ({
   realpath: (...args: unknown[]) => mockRealpath(...args),
 }));
 
+// Mock the path-confinement module
+const mockConfinePath = vi.fn();
+const mockSafeWriteFile = vi.fn();
+
+vi.mock("../util/path-confinement.js", () => ({
+  resolveConfigDir: (_envVar: string, defaultPath: string) => {
+    const raw = process.env.RECORDING_DIR ?? defaultPath;
+    return raw.startsWith("/") ? raw : `/cwd/${raw}`;
+  },
+  confinePath: (...args: unknown[]) => mockConfinePath(...args),
+  safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
+}));
+
 // Mock logger
 vi.mock("../util/logger.js", () => ({
   default: {
@@ -121,8 +134,13 @@ beforeEach(async () => {
   mockEnsurePage.mockResolvedValue(mockPage);
   mockWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
+  mockSafeWriteFile.mockResolvedValue(undefined);
   // By default, realpath returns the path as-is (no symlinks)
   mockRealpath.mockImplementation(async (p: string) => p);
+  // By default, confinePath succeeds — returns the resolved path as-is
+  mockConfinePath.mockImplementation((filePath: string) =>
+    Promise.resolve({ resolvedPath: filePath.startsWith("/") ? filePath : `/cwd/${filePath}` }),
+  );
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -198,6 +216,7 @@ describe("browser_start_recording", () => {
   });
 
   it("rejects outputPath outside RECORDING_DIR (path traversal)", async () => {
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_RECORDING_DIR}` });
     const handler = getToolHandler(server, "browser_start_recording");
     const result = await handler(
       { outputPath: "/etc/evil.mp4" },
@@ -210,6 +229,7 @@ describe("browser_start_recording", () => {
   });
 
   it("rejects outputPath with path traversal sequences", async () => {
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_RECORDING_DIR}` });
     const handler = getToolHandler(server, "browser_start_recording");
     const result = await handler(
       { outputPath: `${TEST_RECORDING_DIR}/../../etc/evil.mp4` },
@@ -221,17 +241,7 @@ describe("browser_start_recording", () => {
   });
 
   it("rejects outputPath that resolves outside RECORDING_DIR via symlink", async () => {
-    // mkdir creates the directory, but realpath reveals symlink escape:
-    // - dirname(resolvedPath) resolves to somewhere outside the recording dir
-    // - the recording dir itself resolves normally
-    let callCount = 0;
-    mockRealpath.mockImplementation(async (p: string) => {
-      callCount++;
-      // First call: realpath(dirname(resolvedPath)) — the directory resolves outside
-      if (callCount === 1) return "/etc/somewhere-else";
-      // Second call: realpath(recordingDir) — returns the real recording dir
-      return p;
-    });
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_RECORDING_DIR} (symlink detected)` });
 
     const handler = getToolHandler(server, "browser_start_recording");
     const result = await handler(
@@ -280,9 +290,9 @@ describe("browser_start_recording", () => {
     const handler = getToolHandler(server, "browser_start_recording");
     await handler({}, { signal: new AbortController().signal });
 
-    expect(mockMkdir).toHaveBeenCalledWith(
+    expect(mockConfinePath).toHaveBeenCalledWith(
       expect.stringContaining(TEST_RECORDING_DIR),
-      expect.objectContaining({ recursive: true }),
+      TEST_RECORDING_DIR,
     );
   });
 
@@ -455,20 +465,20 @@ describe("browser_screenshot_key_moment", () => {
       { signal: new AbortController().signal },
     );
 
-    // Should create screenshots directory within RECORDING_DIR
-    expect(mockMkdir).toHaveBeenCalledWith(
-      expect.stringContaining(`${TEST_RECORDING_DIR}/screenshots`),
-      expect.objectContaining({ recursive: true }),
+    // confinePath should have been called for the screenshot path
+    expect(mockConfinePath).toHaveBeenCalledWith(
+      expect.stringContaining(`${TEST_RECORDING_DIR}/screenshots/`),
+      TEST_RECORDING_DIR,
     );
 
-    // Should write the screenshot file
-    expect(mockWriteFile).toHaveBeenCalledWith(
+    // Should write the screenshot file via safeWriteFile
+    expect(mockSafeWriteFile).toHaveBeenCalledWith(
       expect.stringContaining(`${TEST_RECORDING_DIR}/screenshots/`),
       expect.any(Buffer),
     );
 
     // Screenshot filename should contain the label
-    const writePath = mockWriteFile.mock.calls.find((call: unknown[]) =>
+    const writePath = mockSafeWriteFile.mock.calls.find((call: unknown[]) =>
       (call[0] as string).includes("screenshots/"),
     );
     expect(writePath).toBeTruthy();
@@ -488,14 +498,14 @@ describe("browser_screenshot_key_moment", () => {
 
     expect(mockPage.accessibility.snapshot).toHaveBeenCalled();
 
-    // Should create a11y directory within RECORDING_DIR
-    expect(mockMkdir).toHaveBeenCalledWith(
+    // confinePath should have been called for the a11y path
+    expect(mockConfinePath).toHaveBeenCalledWith(
       expect.stringContaining(`${TEST_RECORDING_DIR}/a11y`),
-      expect.objectContaining({ recursive: true }),
+      TEST_RECORDING_DIR,
     );
 
-    // Should write the a11y JSON file
-    const a11yWrite = mockWriteFile.mock.calls.find((call: unknown[]) =>
+    // Should write the a11y JSON file via safeWriteFile
+    const a11yWrite = mockSafeWriteFile.mock.calls.find((call: unknown[]) =>
       (call[0] as string).includes("a11y/"),
     );
     expect(a11yWrite).toBeTruthy();

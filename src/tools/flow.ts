@@ -12,8 +12,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { readdir, readFile, writeFile, mkdir, realpath } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { readdir, readFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { FlowDefinitionSchema } from "../flow/schema.js";
 import { FlowRunner } from "../flow/runner.js";
 import logger from "../util/logger.js";
@@ -23,50 +24,18 @@ import logger from "../util/logger.js";
 /**
  * Read the allowed flows directory.
  * Read lazily so env var changes and test overrides take effect.
- * Defaults to flows/ relative to cwd.
- * Rejects filesystem root to prevent vacuous confinement.
  */
 function getFlowsDir(): string {
-  const raw = process.env.FLOWS_DIR ?? "flows";
-  const resolved = resolve(raw);
-  if (resolved === "/") {
-    throw new Error("FLOWS_DIR must not resolve to the filesystem root.");
-  }
-  return resolved;
-}
-
-/**
- * Validate that a resolved path is within the allowed directory.
- * Performs a prefix check to prevent path traversal.
- */
-function isWithinDir(resolvedPath: string, allowedDir: string): boolean {
-  return resolvedPath.startsWith(allowedDir + "/") || resolvedPath === allowedDir;
+  return resolveConfigDir("FLOWS_DIR", "flows");
 }
 
 /**
  * Validate and confine a path within the flows directory.
- * Returns the resolved path or an error message.
  */
 async function confinePathToFlowDir(
   filePath: string,
 ): Promise<{ resolvedPath: string } | { error: string }> {
-  const flowsDir = getFlowsDir();
-  const resolvedPath = resolve(filePath);
-
-  if (!isWithinDir(resolvedPath, flowsDir)) {
-    return { error: `Path must be within ${flowsDir}` };
-  }
-
-  await mkdir(dirname(resolvedPath), { recursive: true });
-
-  // Post-mkdir symlink check
-  const realDir = await realpath(dirname(resolvedPath));
-  const realFlowsDir = await realpath(flowsDir);
-  if (!isWithinDir(realDir, realFlowsDir)) {
-    return { error: `Path must be within ${flowsDir} (symlink detected)` };
-  }
-
-  return { resolvedPath: resolve(realDir, basename(resolvedPath)) };
+  return confinePath(filePath, getFlowsDir());
 }
 
 /**
@@ -80,7 +49,7 @@ export function registerFlowTools(server: McpServer): void {
     "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config.",
     {
       name: z.string().optional(),
-      flow: z.any().optional(),
+      flow: z.unknown().optional(),
       record: z.boolean().optional(),
     },
     async ({ name, flow, record }) => {
@@ -240,26 +209,25 @@ export function registerFlowTools(server: McpServer): void {
           };
         }
 
-        const flows: Array<{ file: string; name: string; description?: string; steps: number }> = [];
-
-        for (const file of jsonFiles) {
-          try {
-            const raw = await readFile(join(flowsDir, file), "utf-8");
-            const parsed = FlowDefinitionSchema.safeParse(JSON.parse(raw));
-            if (parsed.success) {
-              flows.push({
-                file,
-                name: parsed.data.name,
-                description: parsed.data.description,
-                steps: parsed.data.steps.length,
-              });
-            } else {
-              flows.push({ file, name: "(invalid)", steps: 0 });
+        const flows = await Promise.all(
+          jsonFiles.map(async (file) => {
+            try {
+              const raw = await readFile(join(flowsDir, file), "utf-8");
+              const parsed = FlowDefinitionSchema.safeParse(JSON.parse(raw));
+              if (parsed.success) {
+                return {
+                  file,
+                  name: parsed.data.name,
+                  description: parsed.data.description,
+                  steps: parsed.data.steps.length,
+                };
+              }
+              return { file, name: "(invalid)" as const, steps: 0 };
+            } catch {
+              return { file, name: "(unreadable)" as const, steps: 0 };
             }
-          } catch {
-            flows.push({ file, name: "(unreadable)", steps: 0 });
-          }
-        }
+          }),
+        );
 
         return {
           content: [{ type: "text" as const, text: JSON.stringify(flows, null, 2) }],
@@ -284,7 +252,7 @@ export function registerFlowTools(server: McpServer): void {
     "browser_save_flow",
     "Save a flow definition to the flows/ directory as a JSON file.",
     {
-      flow: z.any(),
+      flow: z.unknown(),
     },
     async ({ flow }) => {
       try {
@@ -319,7 +287,7 @@ export function registerFlowTools(server: McpServer): void {
           };
         }
 
-        await writeFile(pathResult.resolvedPath, JSON.stringify(definition, null, 2));
+        await safeWriteFile(pathResult.resolvedPath, JSON.stringify(definition, null, 2));
 
         logger.info(`Flow saved: ${pathResult.resolvedPath}`);
 

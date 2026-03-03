@@ -214,16 +214,13 @@ export async function listAllPages(): Promise<PageInfo[]> {
   const b = await ensureBrowser();
   const pages = await b.pages();
 
-  const result: PageInfo[] = [];
-  for (let i = 0; i < pages.length; i++) {
-    result.push({
+  return Promise.all(
+    pages.map(async (p, i) => ({
       index: i,
-      url: pages[i].url(),
-      title: await pages[i].title(),
-    });
-  }
-
-  return result;
+      url: p.url(),
+      title: await p.title(),
+    })),
+  );
 }
 
 /**

@@ -27,8 +27,9 @@ import {
 } from "../browser.js";
 import { isRecordingActive } from "../recording-state.js";
 import { clearRefs } from "../ref-store.js";
-import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
-import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+import { performClick, performType, performHover } from "../util/actions.js";
+import { validateNavigationUrl } from "../util/url-validation.js";
+import logger from "../util/logger.js";
 
 /**
  * Register all navigation tools on the given MCP server.
@@ -70,24 +71,16 @@ export function registerNavigationTools(server: McpServer): void {
     async ({ url, waitUntil }) => {
       try {
         // Validate URL scheme to prevent file:// and javascript: navigation
-        let parsed: URL;
-        try {
-          parsed = new URL(url);
-        } catch {
+        const urlResult = validateNavigationUrl(url);
+        if ("error" in urlResult) {
           return {
-            content: [{ type: "text" as const, text: `Error navigating: Invalid URL "${url}"` }],
-            isError: true,
-          };
-        }
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          return {
-            content: [{ type: "text" as const, text: `Error navigating: Only http: and https: URLs are allowed, got "${parsed.protocol}"` }],
+            content: [{ type: "text" as const, text: `Error navigating: ${urlResult.error}` }],
             isError: true,
           };
         }
 
         const page = await ensurePage();
-        await page.goto(parsed.href, {
+        await page.goto(urlResult.href, {
           waitUntil: waitUntil ?? "load",
           timeout: DEFAULT_TIMEOUT_MS,
         });
@@ -114,26 +107,10 @@ export function registerNavigationTools(server: McpServer): void {
     { selector: z.string().optional(), ref: z.string().optional() },
     async ({ selector, ref }) => {
       try {
-        const resolved = validateSelectorOrRef(selector, ref);
-        if ("error" in resolved) {
-          return {
-            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
-            isError: true,
-          };
-        }
-
-        if (resolved.type === "ref") {
-          await clickByBackendNodeId(resolved.backendNodeId);
-          return {
-            content: [{ type: "text" as const, text: `Clicked ref: ${ref}` }],
-          };
-        }
-
-        const page = await ensurePage();
-        await page.waitForSelector(resolved.value, { visible: true });
-        await page.click(resolved.value);
+        await performClick(selector, ref);
+        const target = ref ? `ref: ${ref}` : selector;
         return {
-          content: [{ type: "text" as const, text: `Clicked: ${resolved.value}` }],
+          content: [{ type: "text" as const, text: `Clicked ${target}` }],
         };
       } catch (err) {
         const target = ref ? `ref ${ref}` : selector;
@@ -158,31 +135,10 @@ export function registerNavigationTools(server: McpServer): void {
     },
     async ({ selector, ref, text, clear }) => {
       try {
-        const resolved = validateSelectorOrRef(selector, ref);
-        if ("error" in resolved) {
-          return {
-            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
-            isError: true,
-          };
-        }
-
-        if (resolved.type === "ref") {
-          await typeByBackendNodeId(resolved.backendNodeId, text, clear);
-          return {
-            content: [{ type: "text" as const, text: `Typed into ref: ${ref}` }],
-          };
-        }
-
-        const page = await ensurePage();
-        if (clear) {
-          // Triple-click to select all existing content, then type to replace
-          await page.click(resolved.value, { clickCount: 3 });
-        } else {
-          await page.click(resolved.value);
-        }
-        await page.type(resolved.value, text);
+        await performType(text, selector, ref, clear);
+        const target = ref ? `ref: ${ref}` : selector;
         return {
-          content: [{ type: "text" as const, text: `Typed into ${resolved.value}` }],
+          content: [{ type: "text" as const, text: `Typed into ${target}` }],
         };
       } catch (err) {
         const target = ref ? `ref ${ref}` : selector;
@@ -202,25 +158,10 @@ export function registerNavigationTools(server: McpServer): void {
     { selector: z.string().optional(), ref: z.string().optional() },
     async ({ selector, ref }) => {
       try {
-        const resolved = validateSelectorOrRef(selector, ref);
-        if ("error" in resolved) {
-          return {
-            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
-            isError: true,
-          };
-        }
-
-        if (resolved.type === "ref") {
-          await hoverByBackendNodeId(resolved.backendNodeId);
-          return {
-            content: [{ type: "text" as const, text: `Hovered ref: ${ref}` }],
-          };
-        }
-
-        const page = await ensurePage();
-        await page.hover(resolved.value);
+        await performHover(selector, ref);
+        const target = ref ? `ref: ${ref}` : selector;
         return {
-          content: [{ type: "text" as const, text: `Hovered: ${resolved.value}` }],
+          content: [{ type: "text" as const, text: `Hovered ${target}` }],
         };
       } catch (err) {
         const target = ref ? `ref ${ref}` : selector;
@@ -258,34 +199,32 @@ export function registerNavigationTools(server: McpServer): void {
   );
 
   // ── browser_evaluate ─────────────────────────────────────────────────
+  // Only register when ALLOW_EVALUATE=true to reduce attack surface visibility
 
-  server.tool(
-    "browser_evaluate",
-    "Run arbitrary JavaScript in the page context and return the result. WARNING: This executes code with full access to the page (cookies, localStorage, DOM, network). Only use in trusted environments.",
-    { script: z.string() },
-    async ({ script }) => {
-      try {
-        if (process.env.ALLOW_EVALUATE !== "true") {
+  if (process.env.ALLOW_EVALUATE === "true") {
+    server.tool(
+      "browser_evaluate",
+      "Run arbitrary JavaScript in the page context and return the result. WARNING: This executes code with full access to the page (cookies, localStorage, DOM, network). Only use in trusted environments.",
+      { script: z.string() },
+      async ({ script }) => {
+        try {
+          logger.warn(`[AUDIT] browser_evaluate called. Script length: ${script.length} chars`);
+
+          const page = await ensurePage();
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          const result = await page.evaluate(script);
           return {
-            content: [{ type: "text" as const, text: "Error: browser_evaluate is disabled. Set ALLOW_EVALUATE=true to enable arbitrary JS execution." }],
+            content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Error evaluating script: ${(err as Error).message}` }],
             isError: true,
           };
         }
-
-        const page = await ensurePage();
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const result = await page.evaluate(script);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Error evaluating script: ${(err as Error).message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
+      },
+    );
+  }
 
   // ── browser_list_pages ───────────────────────────────────────────────
 

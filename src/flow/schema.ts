@@ -83,7 +83,7 @@ const WaitDelayStep = z.object({
 const WaitFunctionStep = z.object({
   action: z.literal("wait"),
   strategy: z.literal("function"),
-  function: z.string().min(1),
+  function: z.string().min(1).max(10_000),
   timeout: z.number().nonnegative().finite().max(300_000).optional(),
   label: z.string().optional(),
 });
@@ -119,7 +119,7 @@ const A11ySnapshotStep = z.object({
 
 const EvaluateStep = z.object({
   action: z.literal("evaluate"),
-  script: z.string().min(1),
+  script: z.string().min(1).max(10_000),
   label: z.string().optional(),
 });
 
@@ -158,10 +158,10 @@ export type RecordingConfig = z.infer<typeof RecordingConfigSchema>;
 // ── Flow definition ──────────────────────────────────────────────────────
 
 export const FlowDefinitionSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
+  name: z.string().max(200),
+  description: z.string().max(2000).optional(),
   recording: RecordingConfigSchema.optional(),
-  steps: z.array(FlowStepSchema).min(1),
+  steps: z.array(FlowStepSchema).min(1).max(500),
 });
 
 export type FlowDefinition = z.infer<typeof FlowDefinitionSchema>;
