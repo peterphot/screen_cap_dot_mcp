@@ -343,5 +343,6 @@ describe("browser_scroll_to_element", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("e1");
+    expect(result.content[0].text).toContain("snapshot");
   });
 });

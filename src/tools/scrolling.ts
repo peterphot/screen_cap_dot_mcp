@@ -12,35 +12,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ensurePage, ensureCDPSession } from "../browser.js";
-import { resolveRef } from "../ref-store.js";
+import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
 import logger from "../util/logger.js";
-
-// ── Validation Helper ─────────────────────────────────────────────────
-
-/**
- * Validate that exactly one of selector or ref is provided.
- * Returns a discriminated union indicating which path to take,
- * or an error string if validation fails.
- */
-function validateSelectorOrRef(
-  selector?: string,
-  ref?: string,
-): { type: "selector"; value: string } | { type: "ref"; backendNodeId: number } | { error: string } {
-  if (selector && ref) {
-    return { error: "Provide either selector or ref, not both." };
-  }
-  if (!selector && !ref) {
-    return { error: "Provide either a CSS selector or a ref from browser_a11y_snapshot." };
-  }
-  if (ref) {
-    const nodeId = resolveRef(ref);
-    if (nodeId === undefined) {
-      return { error: `Stale or invalid ref "${ref}". Take a new browser_a11y_snapshot to get fresh refs.` };
-    }
-    return { type: "ref", backendNodeId: nodeId };
-  }
-  return { type: "selector", value: selector! };
-}
 
 /**
  * Register all scrolling tools on the given MCP server.
