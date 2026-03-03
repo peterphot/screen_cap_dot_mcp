@@ -28,6 +28,16 @@ function getScreenshotDir(): string {
   return resolve(process.env.SCREENSHOT_DIR ?? "/tmp/screen-cap-screenshots");
 }
 
+/** Minimal shape of a node from the browser a11y snapshot. */
+interface A11ySnapshotNode {
+  role?: string;
+  name?: string;
+  backendNodeId?: number;
+  loaderId?: string;
+  ref?: string;
+  children?: A11ySnapshotNode[];
+}
+
 /**
  * Recursively annotate an accessibility tree node with ref IDs.
  *
@@ -36,10 +46,9 @@ function getScreenshotDir(): string {
  * (`backendNodeId`, `loaderId`) that are not useful to the LLM consumer.
  * Processes `children` recursively.
  *
- * Mutates the node in-place and returns it for convenience.
+ * Mutates the node in-place.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function annotateTreeWithRefs(node: Record<string, any>): Record<string, any> {
+export function annotateTreeWithRefs(node: A11ySnapshotNode): void {
   if (typeof node.backendNodeId === "number") {
     node.ref = allocateRef(node.backendNodeId);
   }
@@ -51,8 +60,6 @@ export function annotateTreeWithRefs(node: Record<string, any>): Record<string, 
       annotateTreeWithRefs(child);
     }
   }
-
-  return node;
 }
 
 /** Maximum character length for a11y tree JSON before truncation. */
@@ -173,7 +180,7 @@ export function registerObservationTools(server: McpServer): void {
         });
 
         if (snapshot) {
-          annotateTreeWithRefs(snapshot);
+          annotateTreeWithRefs(snapshot as A11ySnapshotNode);
         }
 
         const raw = JSON.stringify(snapshot);

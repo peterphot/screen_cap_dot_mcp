@@ -459,6 +459,14 @@ describe("browser_a11y_snapshot", () => {
     );
   });
 
+  it("handles null snapshot gracefully", async () => {
+    mockPage.accessibility.snapshot.mockResolvedValue(null);
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler({}, { signal: new AbortController().signal });
+    expect(result.content[0].text).toBe("null");
+    expect(result.isError).toBeFalsy();
+  });
+
   it("returns error text when a11y snapshot fails (does not throw)", async () => {
     mockPage.accessibility.snapshot.mockRejectedValue(new Error("Accessibility not available"));
     const handler = getToolHandler(server, "browser_a11y_snapshot");
@@ -493,24 +501,24 @@ describe("annotateTreeWithRefs", () => {
       ],
     };
 
-    const result = annotateTreeWithRefs(tree);
+    annotateTreeWithRefs(tree);
 
-    // Ref IDs assigned
-    expect(result.ref).toBe("e1");
-    expect(result.children[0].ref).toBe("e2");
-    expect(result.children[1].ref).toBe("e3");
+    // Ref IDs assigned (mutated in-place)
+    expect((tree as Record<string, unknown>).ref).toBe("e1");
+    expect((tree.children[0] as Record<string, unknown>).ref).toBe("e2");
+    expect((tree.children[1] as Record<string, unknown>).ref).toBe("e3");
 
     // Internal fields stripped
-    expect(result).not.toHaveProperty("backendNodeId");
-    expect(result).not.toHaveProperty("loaderId");
-    expect(result.children[0]).not.toHaveProperty("backendNodeId");
-    expect(result.children[1]).not.toHaveProperty("backendNodeId");
-    expect(result.children[1]).not.toHaveProperty("loaderId");
+    expect(tree).not.toHaveProperty("backendNodeId");
+    expect(tree).not.toHaveProperty("loaderId");
+    expect(tree.children[0]).not.toHaveProperty("backendNodeId");
+    expect(tree.children[1]).not.toHaveProperty("backendNodeId");
+    expect(tree.children[1]).not.toHaveProperty("loaderId");
 
     // Original fields preserved
-    expect(result.role).toBe("RootWebArea");
-    expect(result.name).toBe("My App");
-    expect(result.children[1].value).toBe("All");
+    expect(tree.role).toBe("RootWebArea");
+    expect(tree.name).toBe("My App");
+    expect((tree.children[1] as Record<string, unknown>).value).toBe("All");
   });
 
   it("skips ref assignment for nodes without backendNodeId", async () => {
@@ -521,9 +529,9 @@ describe("annotateTreeWithRefs", () => {
       name: "Just text",
     };
 
-    const result = annotateTreeWithRefs(tree);
+    annotateTreeWithRefs(tree);
 
-    expect(result).not.toHaveProperty("ref");
+    expect(tree).not.toHaveProperty("ref");
     expect(mockAllocateRef).not.toHaveBeenCalled();
   });
 });
