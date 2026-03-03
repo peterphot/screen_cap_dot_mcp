@@ -62,4 +62,4 @@ Linear ticket PP-14
 - Integration tests with real browser
 - Changes to other tools (browser_select, browser_evaluate, etc.)
 
-## Status: IN PROGRESS
+## Status: COMPLETED
