@@ -5,7 +5,7 @@
  * Each step has an `action` field (discriminated union) and action-specific params.
  * Steps can have optional `label` for naming screenshots/moments.
  *
- * Supported actions: navigate, click, type, wait, scroll, screenshot,
+ * Supported actions: navigate, click, type, hover, wait, scroll, screenshot,
  * a11y_snapshot, evaluate, sleep.
  */
 
@@ -22,17 +22,35 @@ const NavigateStep = z.object({
 
 const ClickStep = z.object({
   action: z.literal("click"),
-  selector: z.string(),
+  selector: z.string().optional(),
+  ref: z.string().optional(),
   label: z.string().optional(),
-});
+}).refine(
+  (d) => Boolean(d.selector) !== Boolean(d.ref),
+  { message: "Provide either selector or ref, not both or neither." },
+);
 
 const TypeStep = z.object({
   action: z.literal("type"),
-  selector: z.string(),
+  selector: z.string().optional(),
+  ref: z.string().optional(),
   text: z.string(),
   clear: z.boolean().optional(),
   label: z.string().optional(),
-});
+}).refine(
+  (d) => Boolean(d.selector) !== Boolean(d.ref),
+  { message: "Provide either selector or ref, not both or neither." },
+);
+
+const HoverStep = z.object({
+  action: z.literal("hover"),
+  selector: z.string().optional(),
+  ref: z.string().optional(),
+  label: z.string().optional(),
+}).refine(
+  (d) => Boolean(d.selector) !== Boolean(d.ref),
+  { message: "Provide either selector or ref, not both or neither." },
+);
 
 const WaitSelectorStep = z.object({
   action: z.literal("wait"),
@@ -119,6 +137,7 @@ export const FlowStepSchema = z.union([
   NavigateStep,
   ClickStep,
   TypeStep,
+  HoverStep,
   WaitStep,
   ScrollStep,
   ScreenshotStep,

@@ -40,6 +40,30 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("validates a click step with ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      ref: "e1",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a click step with both selector and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      selector: ".btn",
+      ref: "e1",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click step with neither selector nor ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("validates a type step", () => {
     const result = FlowStepSchema.safeParse({
       action: "type",
@@ -48,6 +72,57 @@ describe("FlowStepSchema", () => {
       clear: true,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("validates a type step with ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      ref: "e3",
+      text: "hello world",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a type step with both selector and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      selector: "#search",
+      ref: "e3",
+      text: "hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a hover step with selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      selector: ".menu-item",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover step with ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      ref: "e5",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a hover step with both selector and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      selector: ".menu-item",
+      ref: "e5",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a hover step with neither selector nor ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+    });
+    expect(result.success).toBe(false);
   });
 
   it("validates a wait step with all strategies", () => {
@@ -122,7 +197,7 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects click without selector", () => {
+  it("rejects click without selector or ref", () => {
     const result = FlowStepSchema.safeParse({
       action: "click",
     });
