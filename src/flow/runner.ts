@@ -255,6 +255,7 @@ export class FlowRunner {
         if (resolved.type === "ref") {
           await typeByBackendNodeId(resolved.backendNodeId, step.text, step.clear);
         } else {
+          await page.waitForSelector(resolved.value, { visible: true });
           if (step.clear) {
             await page.click(resolved.value, { clickCount: 3 });
           } else {

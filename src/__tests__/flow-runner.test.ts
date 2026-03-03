@@ -274,6 +274,7 @@ describe("FlowRunner", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith("#input", { visible: true });
     expect(mockPage.click).toHaveBeenCalledWith("#input");
     expect(mockPage.type).toHaveBeenCalledWith("#input", "hello");
   });
@@ -630,6 +631,9 @@ describe("FlowRunner", () => {
 
   it("clears refs after successful navigation", async () => {
     const { clearRefs } = await import("../ref-store.js");
+    const callOrder: string[] = [];
+    mockPage.goto.mockImplementation(async () => { callOrder.push("goto"); });
+    (clearRefs as ReturnType<typeof vi.fn>).mockImplementation(() => { callOrder.push("clearRefs"); });
 
     const flow: FlowDefinition = {
       name: "nav-clears-refs",
@@ -638,10 +642,14 @@ describe("FlowRunner", () => {
 
     await runner.run(flow);
 
-    expect(clearRefs).toHaveBeenCalled();
+    expect(callOrder).toEqual(["goto", "clearRefs"]);
   });
 
   it("waits for selector visibility before hover", async () => {
+    const callOrder: string[] = [];
+    mockPage.waitForSelector.mockImplementation(async () => { callOrder.push("waitForSelector"); });
+    mockPage.hover.mockImplementation(async () => { callOrder.push("hover"); });
+
     const flow: FlowDefinition = {
       name: "hover-wait",
       steps: [{ action: "hover", selector: ".menu" }],
@@ -649,8 +657,7 @@ describe("FlowRunner", () => {
 
     await runner.run(flow);
 
-    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".menu", { visible: true });
-    expect(mockPage.hover).toHaveBeenCalledWith(".menu");
+    expect(callOrder).toEqual(["waitForSelector", "hover"]);
   });
 });
 
