@@ -31,6 +31,9 @@ export function clearRefs(): void {
  * Returns the ref string (e.g. "e1", "e2", "e3").
  */
 export function allocateRef(backendNodeId: number): string {
+  if (!Number.isInteger(backendNodeId) || backendNodeId < 0) {
+    throw new RangeError(`Invalid backendNodeId: ${backendNodeId}`);
+  }
   nextId += 1;
   const ref = `e${nextId}`;
   refs.set(ref, backendNodeId);

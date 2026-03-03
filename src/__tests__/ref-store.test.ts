@@ -36,6 +36,30 @@ describe("allocateRef", () => {
     expect(r2).toBe("e2");
     expect(r3).toBe("e3");
   });
+
+  it("allocates distinct refs even for duplicate backendNodeIds", () => {
+    const r1 = allocateRef(42);
+    const r2 = allocateRef(42);
+    expect(r1).toBe("e1");
+    expect(r2).toBe("e2");
+    expect(resolveRef("e1")).toBe(42);
+    expect(resolveRef("e2")).toBe(42);
+  });
+
+  it("throws RangeError for negative backendNodeId", () => {
+    expect(() => allocateRef(-1)).toThrow(RangeError);
+    expect(() => allocateRef(-1)).toThrow("Invalid backendNodeId: -1");
+  });
+
+  it("throws RangeError for non-integer backendNodeId", () => {
+    expect(() => allocateRef(1.5)).toThrow(RangeError);
+    expect(() => allocateRef(1.5)).toThrow("Invalid backendNodeId: 1.5");
+  });
+
+  it("throws RangeError for NaN backendNodeId", () => {
+    expect(() => allocateRef(NaN)).toThrow(RangeError);
+    expect(() => allocateRef(NaN)).toThrow("Invalid backendNodeId: NaN");
+  });
 });
 
 // ── resolveRef() ───────────────────────────────────────────────────────
