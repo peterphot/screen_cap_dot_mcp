@@ -1,19 +1,17 @@
 {
-  "feature": "pp-5-observation-tools",
+  "feature": "pp-11-ref-store",
   "tickets": {
-    "enabled": true,
-    "type": "linear",
+    "enabled": false,
+    "type": "local",
     "team": "Engineering",
-    "sourceTicket": "PP-5",
+    "sourceTicket": "PP-11",
     "mapping": {
-      "T001": { "ticketId": "PP-5", "identifier": "PP-5" },
-      "T002": { "ticketId": "PP-5", "identifier": "PP-5" },
-      "T003": { "ticketId": "PP-5", "identifier": "PP-5" }
+      "T001": { "ticketId": "PP-11", "identifier": "PP-11" },
+      "T002": { "ticketId": "PP-11", "identifier": "PP-11" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write 17 failing tests for 4 observation tools" },
-    "T002": { "status": "complete", "description": "Implement registerObservationTools with all 4 tools - 17 tests passing" },
-    "T003": { "status": "complete", "description": "Register observation tools in src/index.ts, TypeScript compiles cleanly, 64 tests pass" }
+    "T001": { "status": "complete", "description": "Write failing unit tests for ref-store module" },
+    "T002": { "status": "complete", "description": "Implement ref-store module to make all tests pass" }
   }
 }

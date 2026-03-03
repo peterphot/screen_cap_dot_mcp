@@ -1,9 +1,9 @@
 {
-  "feature": "pp-5-observation-tools",
+  "feature": "pp-11-ref-store",
   "phase": "BUILD_COMPLETE",
-  "currentTask": "T003",
+  "currentTask": "T002",
   "status": "all_tasks_complete",
-  "lastUpdated": "2026-03-02T16:10:00Z",
+  "lastUpdated": "2026-03-03T00:01:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-5"
+  "sourceTicket": "PP-11"
 }
