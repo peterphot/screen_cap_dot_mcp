@@ -68,21 +68,9 @@ google-chrome --remote-debugging-port=9222 &
 
 ### 2. Configure Claude Code
 
-Add to your Claude Code MCP settings (`.claude/settings.json` or `.claude/settings.local.json`):
+The repo includes a `.mcp.json` file, so Claude Code will automatically detect the server when you open the project. Just restart Claude Code after cloning and building.
 
-```json
-{
-  "mcpServers": {
-    "screen-cap": {
-      "command": "npx",
-      "args": ["tsx", "src/index.ts"],
-      "cwd": "/absolute/path/to/screen-cap-mcp"
-    }
-  }
-}
-```
-
-Or run standalone for development:
+To run standalone for development:
 
 ```bash
 npm run dev    # TypeScript directly via tsx
@@ -91,7 +79,7 @@ npm start      # After building with npm run build
 
 ### 3. Verify Connection
 
-In Claude Code, call the `browser_connect` tool. It will return the title and URL of the active Chrome tab.
+In Claude Code, run `/mcp` to confirm the `screen-cap` server is connected, then call the `browser_connect` tool. It will return the title and URL of the active Chrome tab.
 
 ## Tools
 
