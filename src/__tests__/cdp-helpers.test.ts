@@ -32,6 +32,8 @@ import {
   clickByBackendNodeId,
   typeByBackendNodeId,
   hoverByBackendNodeId,
+  CTRL_MODIFIER,
+  VK_KEY_A,
 } from "../cdp-helpers.js";
 
 beforeEach(() => {
@@ -163,8 +165,8 @@ describe("typeByBackendNodeId", () => {
       code: "KeyA",
     });
     // Verify modifier flags for Ctrl
-    expect(calls[1][1].modifiers).toBe(2);
-    expect(calls[1][1].windowsVirtualKeyCode).toBe(65);
+    expect(calls[1][1].modifiers).toBe(CTRL_MODIFIER);
+    expect(calls[1][1].windowsVirtualKeyCode).toBe(VK_KEY_A);
 
     expect(calls[2][0]).toBe("Input.dispatchKeyEvent");
     expect(calls[2][1]).toMatchObject({

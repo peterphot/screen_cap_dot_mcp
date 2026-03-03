@@ -15,9 +15,9 @@
 import { ensureCDPSession } from "./browser.js";
 
 /** CDP modifier flag for the Control key. */
-const CTRL_MODIFIER = 2;
+export const CTRL_MODIFIER = 2;
 /** Windows virtual key code for the "A" key. */
-const VK_KEY_A = 65;
+export const VK_KEY_A = 65;
 
 // ── Input validation ────────────────────────────────────────────────────
 
