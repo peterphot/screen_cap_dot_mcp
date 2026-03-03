@@ -93,6 +93,14 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects a type step with neither selector nor ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      text: "hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("validates a hover step with selector", () => {
     const result = FlowStepSchema.safeParse({
       action: "hover",
@@ -193,13 +201,6 @@ describe("FlowStepSchema", () => {
   it("rejects navigate without url", () => {
     const result = FlowStepSchema.safeParse({
       action: "navigate",
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects click without selector or ref", () => {
-    const result = FlowStepSchema.safeParse({
-      action: "click",
     });
     expect(result.success).toBe(false);
   });

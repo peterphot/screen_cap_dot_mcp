@@ -11,6 +11,13 @@
 
 import { z } from "zod";
 
+// ── Shared refinements ───────────────────────────────────────────────────
+
+/** XOR refinement: exactly one of selector or ref must be provided. */
+const requireSelectorXorRef = (d: { selector?: string; ref?: string }) =>
+  Boolean(d.selector) !== Boolean(d.ref);
+const SELECTOR_XOR_REF_MESSAGE = "Provide either selector or ref, not both or neither.";
+
 // ── Step schemas ─────────────────────────────────────────────────────────
 
 const NavigateStep = z.object({
@@ -22,35 +29,26 @@ const NavigateStep = z.object({
 
 const ClickStep = z.object({
   action: z.literal("click"),
-  selector: z.string().optional(),
-  ref: z.string().optional(),
+  selector: z.string().min(1).optional(),
+  ref: z.string().min(1).optional(),
   label: z.string().optional(),
-}).refine(
-  (d) => Boolean(d.selector) !== Boolean(d.ref),
-  { message: "Provide either selector or ref, not both or neither." },
-);
+}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
 
 const TypeStep = z.object({
   action: z.literal("type"),
-  selector: z.string().optional(),
-  ref: z.string().optional(),
+  selector: z.string().min(1).optional(),
+  ref: z.string().min(1).optional(),
   text: z.string(),
   clear: z.boolean().optional(),
   label: z.string().optional(),
-}).refine(
-  (d) => Boolean(d.selector) !== Boolean(d.ref),
-  { message: "Provide either selector or ref, not both or neither." },
-);
+}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
 
 const HoverStep = z.object({
   action: z.literal("hover"),
-  selector: z.string().optional(),
-  ref: z.string().optional(),
+  selector: z.string().min(1).optional(),
+  ref: z.string().min(1).optional(),
   label: z.string().optional(),
-}).refine(
-  (d) => Boolean(d.selector) !== Boolean(d.ref),
-  { message: "Provide either selector or ref, not both or neither." },
-);
+}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
 
 const WaitSelectorStep = z.object({
   action: z.literal("wait"),
