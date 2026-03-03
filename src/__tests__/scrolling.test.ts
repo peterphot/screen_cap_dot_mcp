@@ -4,7 +4,8 @@
  * All browser module interactions are mocked. These tests verify:
  * - All 2 tools are registered on the McpServer with correct names/descriptions/schemas
  * - browser_scroll scrolls page or container in the specified direction
- * - browser_scroll_to_element scrolls an element into view
+ * - browser_scroll_to_element scrolls an element into view (by CSS selector or ref)
+ * - Ref-based scrolling via CDP DOM.scrollIntoViewIfNeeded
  * - Error paths catch exceptions and return error text with isError: true (never throw)
  */
 
@@ -15,9 +16,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // Mock the browser module
 const mockEnsurePage = vi.fn();
+const mockEnsureCDPSession = vi.fn();
 
 vi.mock("../browser.js", () => ({
   ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
+  ensureCDPSession: (...args: unknown[]) => mockEnsureCDPSession(...args),
+}));
+
+// Mock the ref-store module
+const mockResolveRef = vi.fn();
+vi.mock("../ref-store.js", () => ({
+  resolveRef: (...args: unknown[]) => mockResolveRef(...args),
 }));
 
 // Mock logger
@@ -37,6 +46,10 @@ interface MockPage {
 }
 
 let mockPage: MockPage;
+
+// Mock CDP session
+const mockCDPSend = vi.fn();
+let mockCDPSession: { send: ReturnType<typeof vi.fn> };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -77,6 +90,10 @@ beforeEach(async () => {
   };
 
   mockEnsurePage.mockResolvedValue(mockPage);
+
+  mockCDPSession = { send: mockCDPSend };
+  mockEnsureCDPSession.mockResolvedValue(mockCDPSession);
+  mockCDPSend.mockResolvedValue(undefined);
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -262,5 +279,69 @@ describe("browser_scroll_to_element", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toContain("Execution context was destroyed");
+  });
+
+  it("scrolls via CDP when ref is provided", async () => {
+    mockResolveRef.mockReturnValue(42);
+    const handler = getToolHandler(server, "browser_scroll_to_element");
+    const result = await handler(
+      { ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockResolveRef).toHaveBeenCalledWith("e1");
+    expect(mockEnsureCDPSession).toHaveBeenCalled();
+    expect(mockCDPSend).toHaveBeenCalledWith("DOM.scrollIntoViewIfNeeded", { backendNodeId: 42 });
+    expect(result.content[0].text).toContain("e1");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error when both selector and ref are provided", async () => {
+    const handler = getToolHandler(server, "browser_scroll_to_element");
+    const result = await handler(
+      { selector: "#target", ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not both");
+  });
+
+  it("returns error when neither selector nor ref is provided", async () => {
+    const handler = getToolHandler(server, "browser_scroll_to_element");
+    const result = await handler(
+      {},
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("selector");
+    expect(result.content[0].text).toContain("ref");
+  });
+
+  it("returns descriptive error for stale ref", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+    const handler = getToolHandler(server, "browser_scroll_to_element");
+    const result = await handler(
+      { ref: "e99" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("e99");
+    expect(result.content[0].text).toContain("snapshot");
+  });
+
+  it("returns error when CDP reports stale node for ref scroll", async () => {
+    mockResolveRef.mockReturnValue(42);
+    mockCDPSend.mockRejectedValue(new Error("Could not find node with given id"));
+    const handler = getToolHandler(server, "browser_scroll_to_element");
+    const result = await handler(
+      { ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("e1");
   });
 });
