@@ -58,12 +58,33 @@ vi.mock("../util/logger.js", () => ({
   },
 }));
 
+const mockClickByBackendNodeId = vi.fn();
+const mockTypeByBackendNodeId = vi.fn();
+const mockHoverByBackendNodeId = vi.fn();
+
+vi.mock("../cdp-helpers.js", () => ({
+  clickByBackendNodeId: (...args: unknown[]) => mockClickByBackendNodeId(...args),
+  typeByBackendNodeId: (...args: unknown[]) => mockTypeByBackendNodeId(...args),
+  hoverByBackendNodeId: (...args: unknown[]) => mockHoverByBackendNodeId(...args),
+}));
+
+const mockResolveRef = vi.fn();
+
+// Mock ref-store — used transitively by validate-selector-or-ref.ts (which the runner imports)
+vi.mock("../ref-store.js", () => ({
+  resolveRef: (...args: unknown[]) => mockResolveRef(...args),
+  clearRefs: vi.fn(),
+  allocateRef: vi.fn(),
+  hasRefs: vi.fn(),
+}));
+
 // ── Mock page ────────────────────────────────────────────────────────────
 
 interface MockPage {
   goto: ReturnType<typeof vi.fn>;
   click: ReturnType<typeof vi.fn>;
   type: ReturnType<typeof vi.fn>;
+  hover: ReturnType<typeof vi.fn>;
   screenshot: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
   select: ReturnType<typeof vi.fn>;
@@ -107,6 +128,7 @@ beforeEach(() => {
     goto: vi.fn(),
     click: vi.fn(),
     type: vi.fn(),
+    hover: vi.fn(),
     screenshot: vi.fn().mockResolvedValue(Buffer.from("fake-png")),
     evaluate: vi.fn(),
     select: vi.fn(),
@@ -252,6 +274,7 @@ describe("FlowRunner", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith("#input", { visible: true });
     expect(mockPage.click).toHaveBeenCalledWith("#input");
     expect(mockPage.type).toHaveBeenCalledWith("#input", "hello");
   });
@@ -518,6 +541,123 @@ describe("FlowRunner", () => {
     expect(result.steps).toHaveLength(3);
     expect(result.steps.every((s) => s.success)).toBe(true);
     expect(callOrder).toEqual(["navigate", "click", "navigate"]);
+  });
+
+  it("executes click step with ref", async () => {
+    mockResolveRef.mockReturnValue(42);
+
+    const flow: FlowDefinition = {
+      name: "click-ref",
+      steps: [{ action: "click", ref: "e1" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+    expect(mockPage.click).not.toHaveBeenCalled();
+  });
+
+  it("executes type step with ref", async () => {
+    mockResolveRef.mockReturnValue(55);
+
+    const flow: FlowDefinition = {
+      name: "type-ref",
+      steps: [{ action: "type", ref: "e3", text: "hello" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(55, "hello", undefined);
+    expect(mockPage.type).not.toHaveBeenCalled();
+  });
+
+  it("executes type step with ref and clear", async () => {
+    mockResolveRef.mockReturnValue(55);
+
+    const flow: FlowDefinition = {
+      name: "type-ref-clear",
+      steps: [{ action: "type", ref: "e3", text: "hello", clear: true }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(55, "hello", true);
+  });
+
+  it("executes hover step with selector", async () => {
+    const flow: FlowDefinition = {
+      name: "hover-selector",
+      steps: [{ action: "hover", selector: ".menu-item" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.hover).toHaveBeenCalledWith(".menu-item");
+  });
+
+  it("executes hover step with ref", async () => {
+    mockResolveRef.mockReturnValue(77);
+
+    const flow: FlowDefinition = {
+      name: "hover-ref",
+      steps: [{ action: "hover", ref: "e5" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77);
+    expect(mockPage.hover).not.toHaveBeenCalled();
+  });
+
+  it("captures error for stale ref in flow step", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+
+    const flow: FlowDefinition = {
+      name: "stale-ref",
+      steps: [{ action: "click", ref: "e99" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Stale or invalid ref");
+    expect(mockClickByBackendNodeId).not.toHaveBeenCalled();
+  });
+
+  it("clears refs after successful navigation", async () => {
+    const { clearRefs } = await import("../ref-store.js");
+    const callOrder: string[] = [];
+    mockPage.goto.mockImplementation(async () => { callOrder.push("goto"); });
+    (clearRefs as ReturnType<typeof vi.fn>).mockImplementation(() => { callOrder.push("clearRefs"); });
+
+    const flow: FlowDefinition = {
+      name: "nav-clears-refs",
+      steps: [{ action: "navigate", url: "https://example.com" }],
+    };
+
+    await runner.run(flow);
+
+    expect(callOrder).toEqual(["goto", "clearRefs"]);
+  });
+
+  it("waits for selector visibility before hover", async () => {
+    const callOrder: string[] = [];
+    mockPage.waitForSelector.mockImplementation(async () => { callOrder.push("waitForSelector"); });
+    mockPage.hover.mockImplementation(async () => { callOrder.push("hover"); });
+
+    const flow: FlowDefinition = {
+      name: "hover-wait",
+      steps: [{ action: "hover", selector: ".menu" }],
+    };
+
+    await runner.run(flow);
+
+    expect(callOrder).toEqual(["waitForSelector", "hover"]);
   });
 });
 

@@ -18,6 +18,9 @@ import { ensurePage, DEFAULT_TIMEOUT_MS } from "../browser.js";
 import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
+import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
+import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+import { clearRefs } from "../ref-store.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
 
@@ -230,22 +233,50 @@ export class FlowRunner {
           waitUntil: step.waitUntil ?? "load",
           timeout: DEFAULT_TIMEOUT_MS,
         });
+        clearRefs();
         break;
       }
 
-      case "click":
-        await page.waitForSelector(step.selector, { visible: true });
-        await page.click(step.selector);
-        break;
-
-      case "type":
-        if (step.clear) {
-          await page.click(step.selector, { clickCount: 3 });
+      case "click": {
+        const resolved = validateSelectorOrRef(step.selector, step.ref);
+        if ("error" in resolved) throw new Error(resolved.error);
+        if (resolved.type === "ref") {
+          await clickByBackendNodeId(resolved.backendNodeId);
         } else {
-          await page.click(step.selector);
+          await page.waitForSelector(resolved.value, { visible: true });
+          await page.click(resolved.value);
         }
-        await page.type(step.selector, step.text);
         break;
+      }
+
+      case "type": {
+        const resolved = validateSelectorOrRef(step.selector, step.ref);
+        if ("error" in resolved) throw new Error(resolved.error);
+        if (resolved.type === "ref") {
+          await typeByBackendNodeId(resolved.backendNodeId, step.text, step.clear);
+        } else {
+          await page.waitForSelector(resolved.value, { visible: true });
+          if (step.clear) {
+            await page.click(resolved.value, { clickCount: 3 });
+          } else {
+            await page.click(resolved.value);
+          }
+          await page.type(resolved.value, step.text);
+        }
+        break;
+      }
+
+      case "hover": {
+        const resolved = validateSelectorOrRef(step.selector, step.ref);
+        if ("error" in resolved) throw new Error(resolved.error);
+        if (resolved.type === "ref") {
+          await hoverByBackendNodeId(resolved.backendNodeId);
+        } else {
+          await page.waitForSelector(resolved.value, { visible: true });
+          await page.hover(resolved.value);
+        }
+        break;
+      }
 
       case "wait":
         await this.executeWait(page, step);
