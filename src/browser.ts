@@ -17,6 +17,7 @@
 import puppeteer, { type Browser, type Page, type CDPSession } from "puppeteer-core";
 import logger from "./util/logger.js";
 import { cleanupRecordingState } from "./recording-state.js";
+import { clearRefs } from "./ref-store.js";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ export async function ensureBrowser(): Promise<Browser> {
     b.on("disconnected", () => {
       logger.warn("Browser disconnected — refs nulled, will reconnect on next call");
       cleanupRecordingState();
+      clearRefs();
       browser = null;
       page = null;
       cdpSession = null;
@@ -249,6 +251,7 @@ export async function switchToPage(index: number): Promise<Page> {
   page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
   cdpSession = null; // Reset — new page needs a new CDP session
   cdpSessionPromise = null;
+  clearRefs(); // Refs are tied to a specific page's DOM and become invalid on tab switch
 
   logger.info(`Switched to tab ${index}: ${target.url()}`);
   return target;
@@ -289,4 +292,5 @@ export function _resetForTesting(): void {
   browserPromise = null;
   pagePromise = null;
   cdpSessionPromise = null;
+  clearRefs();
 }
