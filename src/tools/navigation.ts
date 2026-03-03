@@ -1,11 +1,12 @@
 /**
  * Navigation tools for the MCP server.
  *
- * Registers 8 browser automation tools on the McpServer instance:
+ * Registers 9 browser automation tools on the McpServer instance:
  * - browser_connect: Connect to Chrome via CDP
  * - browser_navigate: Navigate to URL
- * - browser_click: Click element by CSS selector
- * - browser_type: Type into input field
+ * - browser_click: Click element by CSS selector or ref
+ * - browser_type: Type into input field by CSS selector or ref
+ * - browser_hover: Hover over element by CSS selector or ref
  * - browser_select: Select dropdown option
  * - browser_evaluate: Run arbitrary JS in page context
  * - browser_list_pages: List open tabs
@@ -25,6 +26,35 @@ import {
   DEFAULT_TIMEOUT_MS,
 } from "../browser.js";
 import { isRecordingActive } from "../recording-state.js";
+import { resolveRef, clearRefs } from "../ref-store.js";
+import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+
+// ── Validation Helper ─────────────────────────────────────────────────
+
+/**
+ * Validate that exactly one of selector or ref is provided.
+ * Returns a discriminated union indicating which path to take,
+ * or an error string if validation fails.
+ */
+function validateSelectorOrRef(
+  selector?: string,
+  ref?: string,
+): { type: "selector"; value: string } | { type: "ref"; backendNodeId: number } | { error: string } {
+  if (selector && ref) {
+    return { error: "Provide either selector or ref, not both." };
+  }
+  if (!selector && !ref) {
+    return { error: "Provide either a CSS selector or a ref from browser_a11y_snapshot." };
+  }
+  if (ref) {
+    const nodeId = resolveRef(ref);
+    if (nodeId === undefined) {
+      return { error: `Stale or invalid ref "${ref}". Take a new browser_a11y_snapshot to get fresh refs.` };
+    }
+    return { type: "ref", backendNodeId: nodeId };
+  }
+  return { type: "selector", value: selector! };
+}
 
 /**
  * Register all navigation tools on the given MCP server.
@@ -82,6 +112,7 @@ export function registerNavigationTools(server: McpServer): void {
           };
         }
 
+        clearRefs();
         const page = await ensurePage();
         await page.goto(parsed.href, {
           waitUntil: waitUntil ?? "load",
@@ -105,19 +136,35 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_click",
-    "Click an element on the page by CSS selector.",
-    { selector: z.string() },
-    async ({ selector }) => {
+    "Click an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    { selector: z.string().optional(), ref: z.string().optional() },
+    async ({ selector, ref }) => {
       try {
+        const resolved = validateSelectorOrRef(selector, ref);
+        if ("error" in resolved) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
+            isError: true,
+          };
+        }
+
+        if (resolved.type === "ref") {
+          await clickByBackendNodeId(resolved.backendNodeId);
+          return {
+            content: [{ type: "text" as const, text: `Clicked ref: ${ref}` }],
+          };
+        }
+
         const page = await ensurePage();
-        await page.waitForSelector(selector, { visible: true });
-        await page.click(selector);
+        await page.waitForSelector(resolved.value, { visible: true });
+        await page.click(resolved.value);
         return {
-          content: [{ type: "text" as const, text: `Clicked: ${selector}` }],
+          content: [{ type: "text" as const, text: `Clicked: ${resolved.value}` }],
         };
       } catch (err) {
+        const target = ref ? `ref ${ref}` : selector;
         return {
-          content: [{ type: "text" as const, text: `Error clicking ${selector}: ${(err as Error).message}` }],
+          content: [{ type: "text" as const, text: `Error clicking ${target}: ${(err as Error).message}` }],
           isError: true,
         };
       }
@@ -128,28 +175,83 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_type",
-    "Type text into an input field identified by CSS selector.",
+    "Type text into an input field. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
     {
-      selector: z.string(),
+      selector: z.string().optional(),
+      ref: z.string().optional(),
       text: z.string(),
       clear: z.boolean().optional(),
     },
-    async ({ selector, text, clear }) => {
+    async ({ selector, ref, text, clear }) => {
       try {
+        const resolved = validateSelectorOrRef(selector, ref);
+        if ("error" in resolved) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
+            isError: true,
+          };
+        }
+
+        if (resolved.type === "ref") {
+          await typeByBackendNodeId(resolved.backendNodeId, text, clear);
+          return {
+            content: [{ type: "text" as const, text: `Typed into ref: ${ref}` }],
+          };
+        }
+
         const page = await ensurePage();
         if (clear) {
           // Triple-click to select all existing content, then type to replace
-          await page.click(selector, { clickCount: 3 });
+          await page.click(resolved.value, { clickCount: 3 });
         } else {
-          await page.click(selector);
+          await page.click(resolved.value);
         }
-        await page.type(selector, text);
+        await page.type(resolved.value, text);
         return {
-          content: [{ type: "text" as const, text: `Typed into ${selector}` }],
+          content: [{ type: "text" as const, text: `Typed into ${resolved.value}` }],
         };
       } catch (err) {
+        const target = ref ? `ref ${ref}` : selector;
         return {
-          content: [{ type: "text" as const, text: `Error typing into ${selector}: ${(err as Error).message}` }],
+          content: [{ type: "text" as const, text: `Error typing into ${target}: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_hover ────────────────────────────────────────────────────
+
+  server.tool(
+    "browser_hover",
+    "Hover over an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    { selector: z.string().optional(), ref: z.string().optional() },
+    async ({ selector, ref }) => {
+      try {
+        const resolved = validateSelectorOrRef(selector, ref);
+        if ("error" in resolved) {
+          return {
+            content: [{ type: "text" as const, text: `Error: ${resolved.error}` }],
+            isError: true,
+          };
+        }
+
+        if (resolved.type === "ref") {
+          await hoverByBackendNodeId(resolved.backendNodeId);
+          return {
+            content: [{ type: "text" as const, text: `Hovered ref: ${ref}` }],
+          };
+        }
+
+        const page = await ensurePage();
+        await page.hover(resolved.value);
+        return {
+          content: [{ type: "text" as const, text: `Hovered: ${resolved.value}` }],
+        };
+      } catch (err) {
+        const target = ref ? `ref ${ref}` : selector;
+        return {
+          content: [{ type: "text" as const, text: `Error hovering ${target}: ${(err as Error).message}` }],
           isError: true,
         };
       }

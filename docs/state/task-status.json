@@ -1,17 +1,19 @@
 {
-  "feature": "pp-13-a11y-ref-ids",
+  "feature": "pp-14-ref-support-click-type-hover",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-13",
+    "sourceTicket": "PP-14",
     "mapping": {
-      "T001": { "ticketId": "PP-13", "identifier": "PP-13" },
-      "T002": { "ticketId": "PP-13", "identifier": "PP-13" }
+      "T001": { "ticketId": "PP-14", "identifier": "PP-14" },
+      "T002": { "ticketId": "PP-14", "identifier": "PP-14" },
+      "T003": { "ticketId": "PP-14", "identifier": "PP-14" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Test: Write failing tests for a11y ref ID annotation" },
-    "T002": { "status": "in_progress", "description": "Implement: annotateTreeWithRefs and integrate into handler" }
+    "T001": { "status": "complete", "description": "Test: Write failing tests for ref support and browser_hover" },
+    "T002": { "status": "complete", "description": "Implement: ref support in click/type, browser_hover, clearRefs on navigate" },
+    "T003": { "status": "complete", "description": "Document: Update module docblock (8 -> 9 tools)" }
   }
 }

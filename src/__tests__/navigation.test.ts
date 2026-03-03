@@ -2,10 +2,12 @@
  * Unit tests for navigation tools (src/tools/navigation.ts)
  *
  * All browser module interactions are mocked. These tests verify:
- * - All 8 tools are registered on the McpServer with correct names/descriptions/schemas
+ * - All 9 tools are registered on the McpServer with correct names/descriptions/schemas
  * - Success paths return correct text content
  * - Error paths catch exceptions and return error text (never throw)
  * - Input validation via Zod schemas
+ * - Ref-based interaction via CDP helpers (browser_click, browser_type, browser_hover)
+ * - Refs cleared on navigation
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -30,6 +32,24 @@ vi.mock("../browser.js", async (importOriginal) => {
     switchToPage: (...args: unknown[]) => mockSwitchToPage(...args),
   };
 });
+
+// Mock the ref-store module
+const mockResolveRef = vi.fn();
+const mockClearRefs = vi.fn();
+vi.mock("../ref-store.js", () => ({
+  resolveRef: (...args: unknown[]) => mockResolveRef(...args),
+  clearRefs: (...args: unknown[]) => mockClearRefs(...args),
+}));
+
+// Mock the cdp-helpers module
+const mockClickByBackendNodeId = vi.fn();
+const mockTypeByBackendNodeId = vi.fn();
+const mockHoverByBackendNodeId = vi.fn();
+vi.mock("../cdp-helpers.js", () => ({
+  clickByBackendNodeId: (...args: unknown[]) => mockClickByBackendNodeId(...args),
+  typeByBackendNodeId: (...args: unknown[]) => mockTypeByBackendNodeId(...args),
+  hoverByBackendNodeId: (...args: unknown[]) => mockHoverByBackendNodeId(...args),
+}));
 
 // Mock the recording-state module (navigation.ts imports isRecordingActive)
 const mockIsRecordingActive = vi.fn().mockReturnValue(false);
@@ -58,6 +78,7 @@ interface MockPage {
   type: ReturnType<typeof vi.fn>;
   select: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
+  hover: ReturnType<typeof vi.fn>;
 }
 
 let mockPage: MockPage;
@@ -103,7 +124,12 @@ beforeEach(async () => {
     type: vi.fn().mockResolvedValue(undefined),
     select: vi.fn().mockResolvedValue(["option1"]),
     evaluate: vi.fn().mockResolvedValue({ result: "test" }),
+    hover: vi.fn().mockResolvedValue(undefined),
   };
+
+  mockClickByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
+  mockTypeByBackendNodeId.mockResolvedValue(undefined);
+  mockHoverByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
 
   mockEnsureBrowser.mockResolvedValue({});
   mockEnsurePage.mockResolvedValue(mockPage);
@@ -122,7 +148,7 @@ beforeEach(async () => {
 // ── Tool Registration ───────────────────────────────────────────────────
 
 describe("registerNavigationTools", () => {
-  it("registers all 8 tools on the server", () => {
+  it("registers all 9 tools on the server", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
@@ -134,7 +160,8 @@ describe("registerNavigationTools", () => {
     expect(toolNames).toContain("browser_evaluate");
     expect(toolNames).toContain("browser_list_pages");
     expect(toolNames).toContain("browser_switch_page");
-    expect(toolNames).toHaveLength(8);
+    expect(toolNames).toContain("browser_hover");
+    expect(toolNames).toHaveLength(9);
   });
 
   it("each tool has a description", () => {
@@ -256,6 +283,20 @@ describe("browser_navigate", () => {
     expect(result.content[0].text).toContain("Invalid URL");
     expect(mockPage.goto).not.toHaveBeenCalled();
   });
+
+  it("calls clearRefs() before navigating to invalidate stale refs", async () => {
+    const handler = getToolHandler(server, "browser_navigate");
+    await handler(
+      { url: "https://example.com/new-page" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockClearRefs).toHaveBeenCalled();
+    // clearRefs should be called before page.goto
+    const clearRefsOrder = mockClearRefs.mock.invocationCallOrder[0];
+    const gotoOrder = mockPage.goto.mock.invocationCallOrder[0];
+    expect(clearRefsOrder).toBeLessThan(gotoOrder);
+  });
 });
 
 // ── browser_click ───────────────────────────────────────────────────────
@@ -285,6 +326,56 @@ describe("browser_click", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Selector not found");
+  });
+
+  it("clicks via CDP when ref is provided", async () => {
+    mockResolveRef.mockReturnValue(42);
+    const handler = getToolHandler(server, "browser_click");
+    const result = await handler(
+      { ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockResolveRef).toHaveBeenCalledWith("e1");
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+    expect(result.content[0].text).toContain("e1");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error when both selector and ref are provided", async () => {
+    const handler = getToolHandler(server, "browser_click");
+    const result = await handler(
+      { selector: "#btn", ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not both");
+  });
+
+  it("returns error when neither selector nor ref is provided", async () => {
+    const handler = getToolHandler(server, "browser_click");
+    const result = await handler(
+      {},
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("selector");
+    expect(result.content[0].text).toContain("ref");
+  });
+
+  it("returns descriptive error for stale ref", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+    const handler = getToolHandler(server, "browser_click");
+    const result = await handler(
+      { ref: "e99" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("e99");
+    expect(result.content[0].text).toContain("snapshot");
   });
 });
 
@@ -325,6 +416,133 @@ describe("browser_type", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Element not interactable");
+  });
+
+  it("types via CDP when ref is provided", async () => {
+    mockResolveRef.mockReturnValue(55);
+    const handler = getToolHandler(server, "browser_type");
+    const result = await handler(
+      { ref: "e3", text: "hello ref" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockResolveRef).toHaveBeenCalledWith("e3");
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(55, "hello ref", undefined);
+    expect(result.content[0].text).toContain("e3");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("types via CDP with clear=true when ref is provided", async () => {
+    mockResolveRef.mockReturnValue(55);
+    const handler = getToolHandler(server, "browser_type");
+    await handler(
+      { ref: "e3", text: "replaced", clear: true },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(55, "replaced", true);
+  });
+
+  it("returns error when both selector and ref are provided for type", async () => {
+    const handler = getToolHandler(server, "browser_type");
+    const result = await handler(
+      { selector: "#input", ref: "e1", text: "test" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not both");
+  });
+
+  it("returns error when neither selector nor ref is provided for type", async () => {
+    const handler = getToolHandler(server, "browser_type");
+    const result = await handler(
+      { text: "test" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("selector");
+    expect(result.content[0].text).toContain("ref");
+  });
+
+  it("returns descriptive error for stale ref in type", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+    const handler = getToolHandler(server, "browser_type");
+    const result = await handler(
+      { ref: "e99", text: "test" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("e99");
+    expect(result.content[0].text).toContain("snapshot");
+  });
+});
+
+// ── browser_hover ───────────────────────────────────────────────────────
+
+describe("browser_hover", () => {
+  it("hovers over an element by CSS selector", async () => {
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      { selector: "#menu-item" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.hover).toHaveBeenCalledWith("#menu-item");
+    expect(result.content[0].text).toContain("#menu-item");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("hovers via CDP when ref is provided", async () => {
+    mockResolveRef.mockReturnValue(77);
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      { ref: "e5" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockResolveRef).toHaveBeenCalledWith("e5");
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77);
+    expect(result.content[0].text).toContain("e5");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error when both selector and ref are provided for hover", async () => {
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      { selector: "#item", ref: "e1" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not both");
+  });
+
+  it("returns error when neither selector nor ref is provided for hover", async () => {
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      {},
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("selector");
+    expect(result.content[0].text).toContain("ref");
+  });
+
+  it("returns error text when hover fails", async () => {
+    mockPage.hover.mockRejectedValue(new Error("Element detached"));
+    const handler = getToolHandler(server, "browser_hover");
+    const result = await handler(
+      { selector: "#gone" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Element detached");
   });
 });
 
