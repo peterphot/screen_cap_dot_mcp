@@ -64,6 +64,22 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects a click step with empty selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      selector: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click step with empty ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      ref: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("validates a type step", () => {
     const result = FlowStepSchema.safeParse({
       action: "type",
