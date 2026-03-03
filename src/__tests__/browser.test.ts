@@ -71,6 +71,11 @@ vi.mock("../recording-state.js", () => ({
   MAX_KEY_MOMENTS: 100,
 }));
 
+// Mock the ref-store module (browser.ts imports clearRefs)
+vi.mock("../ref-store.js", () => ({
+  clearRefs: vi.fn(),
+}));
+
 import {
   ensureBrowser,
   ensurePage,
@@ -81,6 +86,7 @@ import {
   getBrowser,
   _resetForTesting,
 } from "../browser.js";
+import { clearRefs } from "../ref-store.js";
 
 const originalChromeUrl = process.env.CHROME_CDP_URL;
 
@@ -332,6 +338,13 @@ describe("switchToPage", () => {
     expect(mockPage2.createCDPSession).toHaveBeenCalled();
   });
 
+  it("clears refs when switching tabs", async () => {
+    await ensureBrowser();
+    await switchToPage(1);
+
+    expect(clearRefs).toHaveBeenCalled();
+  });
+
   it("throws on invalid index (negative)", async () => {
     await ensureBrowser();
 
@@ -386,6 +399,15 @@ describe("disconnect handling", () => {
 
     expect(() => getPage()).toThrow();
     expect(() => getBrowser()).toThrow();
+  });
+
+  it("clears refs when disconnect fires", async () => {
+    await ensureBrowser();
+
+    expect(disconnectHandler).not.toBeNull();
+    disconnectHandler!();
+
+    expect(clearRefs).toHaveBeenCalled();
   });
 
   it("allows reconnection after disconnect", async () => {
