@@ -263,6 +263,7 @@ export async function getViewportBounds(): Promise<{ width: number; height: numb
 export async function getElementBoundingBox(
   backendNodeId: number,
   viewport?: { width: number; height: number },
+  cdp?: { send: (method: string, params: Record<string, unknown>) => Promise<unknown> },
 ): Promise<BoundingBox | null> {
   assertValidNodeId(backendNodeId);
 
@@ -270,8 +271,8 @@ export async function getElementBoundingBox(
 
   let quads: number[][];
   try {
-    const cdp = await ensureCDPSession();
-    const result = (await cdp.send("DOM.getContentQuads", {
+    const session = cdp ?? (await ensureCDPSession());
+    const result = (await session.send("DOM.getContentQuads", {
       backendNodeId,
     })) as { quads?: number[][] };
     quads = result.quads ?? [];
@@ -332,11 +333,12 @@ export async function batchGetBoundingBoxes(
   }
 
   const viewport = await getViewportBounds();
+  const cdp = await ensureCDPSession();
 
   for (let i = 0; i < uniqueIds.length; i += BATCH_CONCURRENCY) {
     const chunk = uniqueIds.slice(i, i + BATCH_CONCURRENCY);
     const results = await Promise.allSettled(
-      chunk.map((id) => getElementBoundingBox(id, viewport)),
+      chunk.map((id) => getElementBoundingBox(id, viewport, cdp)),
     );
 
     for (let j = 0; j < chunk.length; j++) {

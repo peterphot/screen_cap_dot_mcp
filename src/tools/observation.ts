@@ -13,12 +13,20 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { Page } from "puppeteer-core";
 import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { ensurePage } from "../browser.js";
-import { clearRefs, allocateRef } from "../ref-store.js";
+import { clearRefs, allocateRef, getAllRefs, hasRefs } from "../ref-store.js";
+import { batchGetBoundingBoxes } from "../cdp-helpers.js";
 import { filterTree, formatA11yTree } from "../util/a11y-formatter.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 import logger from "../util/logger.js";
+
+/** Result shape returned by MCP tool handlers. */
+type ToolResult = {
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }>;
+  isError?: boolean;
+};
 
 /**
  * Read the allowed screenshot save directory.
@@ -57,6 +65,73 @@ export function annotateTreeWithRefs(node: A11ySnapshotNode, depth = 0): void {
   }
 }
 
+/**
+ * Take an annotated screenshot with ref label overlays on interactive elements.
+ *
+ * Requires refs from a prior a11y snapshot. Injects a DOM overlay with labels,
+ * takes a screenshot, then removes the overlay (with cleanup in finally).
+ */
+async function takeAnnotatedScreenshot(
+  page: Page,
+): Promise<ToolResult> {
+  // Get all refs and their bounding boxes
+  const refMap = getAllRefs(); // Map<string, number> (ref -> backendNodeId)
+  const backendNodeIds = [...refMap.values()];
+  const bboxMap = await batchGetBoundingBoxes(backendNodeIds);
+
+  // Build list of visible labels (filter out null bounding boxes)
+  const labels: Array<{ ref: string; x: number; y: number }> = [];
+  for (const [ref, backendNodeId] of refMap) {
+    const bbox = bboxMap.get(backendNodeId);
+    if (bbox) {
+      labels.push({ ref, x: bbox.x, y: bbox.y });
+    }
+  }
+
+  // If all elements are off-screen, take a normal screenshot with a note
+  if (labels.length === 0) {
+    const base64 = (await page.screenshot({ encoding: "base64" })) as string;
+    return {
+      content: [
+        { type: "image" as const, data: base64, mimeType: "image/png" as const },
+        { type: "text" as const, text: "Note: All ref'd elements are off-screen. Showing normal screenshot without annotations." },
+      ],
+    };
+  }
+
+  logger.debug(`Annotated screenshot: injecting overlay with ${labels.length} labels`);
+
+  // Inject overlay, take screenshot, remove overlay (with cleanup in finally)
+  try {
+    await page.evaluate((lbls: Array<{ ref: string; x: number; y: number }>) => {
+      const overlay = document.createElement("div");
+      overlay.id = "__scm_annotation_overlay";
+      overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;";
+      lbls.forEach(({ ref, x, y }) => {
+        const el = document.createElement("span");
+        el.textContent = "[" + ref + "]";
+        el.style.cssText = "position:absolute;font-size:11px;font-weight:bold;color:#fff;background:rgba(0,0,0,0.7);padding:1px 4px;border-radius:3px;left:" + x + "px;top:" + y + "px;line-height:1.2;white-space:nowrap;";
+        overlay.appendChild(el);
+      });
+      document.documentElement.appendChild(overlay);
+    }, labels);
+
+    const base64 = (await page.screenshot({ encoding: "base64" })) as string;
+    return {
+      content: [{ type: "image" as const, data: base64, mimeType: "image/png" as const }],
+    };
+  } finally {
+    try {
+      await page.evaluate(() => {
+        const el = document.getElementById("__scm_annotation_overlay");
+        if (el) el.remove();
+      });
+    } catch (cleanupErr) {
+      logger.warn(`Failed to remove annotation overlay: ${(cleanupErr as Error).message}`);
+    }
+  }
+}
+
 /** Maximum character length for a11y tree JSON before truncation. */
 const MAX_A11Y_CHARS = 512_000;
 
@@ -71,15 +146,38 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_screenshot",
-    "Capture a screenshot of the viewport, full page, or a specific element. Returns an image content block that Claude can see.",
+    "Capture a screenshot of the viewport, full page, or a specific element. Set annotate: true to overlay [eN] ref labels on interactive elements (requires a prior browser_a11y_snapshot call). Returns an image content block that Claude can see.",
     {
       selector: z.string().optional(),
       fullPage: z.boolean().optional(),
       savePath: z.string().optional(),
+      annotate: z.boolean().optional(),
     },
-    async ({ selector, fullPage, savePath }) => {
+    async ({ selector, fullPage, savePath, annotate }) => {
       try {
         const page = await ensurePage();
+
+        // ── Annotated screenshot mode ──────────────────────────────────
+        if (annotate) {
+          if (selector || fullPage || savePath) {
+            return {
+              content: [{ type: "text" as const, text: "The 'annotate' option cannot be combined with 'selector', 'fullPage', or 'savePath'." }],
+              isError: true,
+            };
+          }
+
+          // Require refs from a prior a11y snapshot
+          if (!hasRefs()) {
+            return {
+              content: [{ type: "text" as const, text: "No refs available. Call browser_a11y_snapshot first." }],
+              isError: true,
+            };
+          }
+
+          return await takeAnnotatedScreenshot(page);
+        }
+
+        // ── Normal screenshot mode ─────────────────────────────────────
 
         // Validate and confine savePath if provided
         let confinedSavePath: string | undefined;

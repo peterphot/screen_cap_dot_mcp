@@ -57,8 +57,7 @@ export function hasRefs(): boolean {
 
 // ── Metadata types ──────────────────────────────────────────────────
 
-/** Rich metadata for a ref. Currently contains backendNodeId;
- *  will be extended with bounding box data for annotated screenshots. */
+/** Metadata associated with a ref. Bounding boxes are resolved on-demand via cdp-helpers. */
 export interface RefMetadata {
   backendNodeId: number;
 }
