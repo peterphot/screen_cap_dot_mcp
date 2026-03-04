@@ -4,7 +4,7 @@
  * All browser module interactions are mocked. These tests verify:
  * - All 4 tools are registered on the McpServer with correct names/descriptions/schemas
  * - browser_screenshot returns image content block (viewport, fullPage, selector, savePath)
- * - browser_a11y_snapshot returns parseable JSON accessibility tree
+ * - browser_a11y_snapshot returns compact tree text (default) or JSON (format: "json")
  * - browser_get_page_info returns URL, title, viewport, and scroll dimensions
  * - browser_get_text returns element innerText
  * - Error paths catch exceptions and return error text with isError: true (never throw)
@@ -361,7 +361,7 @@ describe("browser_screenshot", () => {
 // ── browser_a11y_snapshot ───────────────────────────────────────────────
 
 describe("browser_a11y_snapshot", () => {
-  it("returns compact JSON accessibility tree with interestingOnly true by default", async () => {
+  it("returns compact tree text by default with interestingOnly true", async () => {
     const handler = getToolHandler(server, "browser_a11y_snapshot");
     const result = await handler({}, { signal: new AbortController().signal });
 
@@ -372,47 +372,38 @@ describe("browser_a11y_snapshot", () => {
     expect(result.content).toHaveLength(1);
     expect(result.content[0].type).toBe("text");
 
-    // Result should be parseable compact JSON (no indentation)
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.role).toBe("WebArea");
-    expect(parsed.children).toHaveLength(2);
-    // Verify ref IDs are present on annotated nodes
-    expect(parsed.ref).toBe("e1");
-    expect(parsed.children[0].ref).toBe("e2");
-    expect(parsed.children[1].ref).toBe("e3");
-    // Verify it's compact (no newlines within the JSON)
-    expect(result.content[0].text).not.toContain("\n");
+    const text = result.content[0].text;
+    // Default format is compact tree text, not JSON
+    expect(() => JSON.parse(text)).toThrow(); // Not valid JSON
+    // Should contain ref IDs prominently at start of lines
+    expect(text).toContain("[e1]");
+    expect(text).toContain("[e2]");
+    expect(text).toContain("[e3]");
+    // Should contain roles and names
+    expect(text).toContain("WebArea");
+    expect(text).toContain("Welcome");
+    expect(text).toContain("Click me");
   });
 
   it("annotates nodes with ref IDs from allocateRef", async () => {
     const handler = getToolHandler(server, "browser_a11y_snapshot");
-    const result = await handler({}, { signal: new AbortController().signal });
+    await handler({}, { signal: new AbortController().signal });
 
-    const parsed = JSON.parse(result.content[0].text);
     // Root and two children each have backendNodeId, so 3 refs allocated
     expect(mockAllocateRef).toHaveBeenCalledTimes(3);
     expect(mockAllocateRef).toHaveBeenCalledWith(1); // root backendNodeId
     expect(mockAllocateRef).toHaveBeenCalledWith(2); // heading backendNodeId
     expect(mockAllocateRef).toHaveBeenCalledWith(3); // link backendNodeId
-
-    expect(parsed.ref).toBe("e1");
-    expect(parsed.children[0].ref).toBe("e2");
-    expect(parsed.children[1].ref).toBe("e3");
   });
 
-  it("strips backendNodeId and loaderId from output", async () => {
+  it("strips backendNodeId and loaderId from tree output", async () => {
     const handler = getToolHandler(server, "browser_a11y_snapshot");
     const result = await handler({}, { signal: new AbortController().signal });
 
-    const parsed = JSON.parse(result.content[0].text);
-    // backendNodeId should be stripped from all nodes
-    expect(parsed).not.toHaveProperty("backendNodeId");
-    expect(parsed.children[0]).not.toHaveProperty("backendNodeId");
-    expect(parsed.children[1]).not.toHaveProperty("backendNodeId");
-    // loaderId should be stripped from all nodes
-    expect(parsed).not.toHaveProperty("loaderId");
-    expect(parsed.children[0]).not.toHaveProperty("loaderId");
-    expect(parsed.children[1]).not.toHaveProperty("loaderId");
+    const text = result.content[0].text;
+    // Internal fields should not appear in compact tree output
+    expect(text).not.toContain("backendNodeId");
+    expect(text).not.toContain("loaderId");
   });
 
   it("calls clearRefs at the start of each snapshot", async () => {
@@ -438,23 +429,24 @@ describe("browser_a11y_snapshot", () => {
     const handler = getToolHandler(server, "browser_a11y_snapshot");
     const result = await handler({}, { signal: new AbortController().signal });
 
-    const parsed = JSON.parse(result.content[0].text);
-    // Root has no backendNodeId, so no ref
-    expect(parsed).not.toHaveProperty("ref");
-    // Child has no backendNodeId, so no ref
-    expect(parsed.children[0]).not.toHaveProperty("ref");
+    const text = result.content[0].text;
+    // No refs should be in the output
+    expect(text).not.toContain("[e");
+    // But roles and names should still appear
+    expect(text).toContain("WebArea");
+    expect(text).toContain("Plain text");
     // allocateRef should not have been called
     expect(mockAllocateRef).not.toHaveBeenCalled();
   });
 
-  it("truncates very large a11y trees", async () => {
-    // Create a large fake a11y tree
+  it("truncates very large a11y trees (tree format)", async () => {
+    // Create a large fake a11y tree with unique role names to avoid sibling truncation
     const largeTree = {
       role: "WebArea",
       name: "Large Page",
       children: Array.from({ length: 50000 }, (_, i) => ({
-        role: "paragraph",
-        name: `Paragraph ${i} with some content to make it larger`,
+        role: `paragraph-${i}`,
+        name: `Paragraph ${i} with some content to make it larger and fill up the output buffer`,
       })),
     };
     mockPage.accessibility.snapshot.mockResolvedValue(largeTree);
@@ -497,10 +489,146 @@ describe("browser_a11y_snapshot", () => {
     expect(result.content[0].text).toContain("Accessibility not available");
   });
 
-  it("tool description mentions ref IDs", () => {
+  it("tool description mentions ref IDs and compact format", () => {
     const tools = getRegisteredTools(server);
     const description = tools["browser_a11y_snapshot"].description ?? "";
     expect(description).toContain("ref");
+    expect(description).toContain("compact");
+  });
+
+  // ── format: "json" backward compatibility ───────────────────────────
+
+  it('format: "json" returns parseable JSON (backward compatibility)', async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler(
+      { format: "json" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+
+    // Result should be parseable JSON
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.role).toBe("WebArea");
+    expect(parsed.children).toHaveLength(2);
+    // Verify ref IDs are present on annotated nodes
+    expect(parsed.ref).toBe("e1");
+    expect(parsed.children[0].ref).toBe("e2");
+    expect(parsed.children[1].ref).toBe("e3");
+    // Verify it's compact JSON (no indentation newlines)
+    expect(result.content[0].text).not.toContain("\n");
+  });
+
+  it('format: "json" strips backendNodeId and loaderId', async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler(
+      { format: "json" },
+      { signal: new AbortController().signal },
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed).not.toHaveProperty("backendNodeId");
+    expect(parsed.children[0]).not.toHaveProperty("backendNodeId");
+    expect(parsed.children[1]).not.toHaveProperty("backendNodeId");
+    expect(parsed).not.toHaveProperty("loaderId");
+    expect(parsed.children[1]).not.toHaveProperty("loaderId");
+  });
+
+  it('format: "json" truncates very large trees', async () => {
+    const largeTree = {
+      role: "WebArea",
+      name: "Large Page",
+      children: Array.from({ length: 50000 }, (_, i) => ({
+        role: "paragraph",
+        name: `Paragraph ${i} with some content to make it larger`,
+      })),
+    };
+    mockPage.accessibility.snapshot.mockResolvedValue(largeTree);
+
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler(
+      { format: "json" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.content[0].text).toContain("... (truncated, total");
+    expect(result.content[0].text.length).toBeLessThanOrEqual(512_000 + 100);
+  });
+
+  // ── format: "tree" (explicit) ───────────────────────────────────────
+
+  it('format: "tree" returns compact tree text (same as default)', async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const resultDefault = await handler({}, { signal: new AbortController().signal });
+
+    // Reset mocks and get a fresh snapshot for the explicit tree format
+    vi.clearAllMocks();
+    let refCounter = 0;
+    mockAllocateRef.mockImplementation(() => {
+      refCounter += 1;
+      return `e${refCounter}`;
+    });
+    mockEnsurePage.mockResolvedValue(mockPage);
+
+    const resultTree = await handler(
+      { format: "tree" },
+      { signal: new AbortController().signal },
+    );
+
+    // Both should produce tree text (not JSON)
+    expect(() => JSON.parse(resultDefault.content[0].text)).toThrow();
+    expect(() => JSON.parse(resultTree.content[0].text)).toThrow();
+  });
+
+  // ── maxDepth parameter ──────────────────────────────────────────────
+
+  it("maxDepth limits tree depth in output", async () => {
+    mockPage.accessibility.snapshot.mockResolvedValue({
+      role: "WebArea",
+      name: "Page",
+      backendNodeId: 1,
+      children: [
+        {
+          role: "navigation",
+          name: "Nav",
+          backendNodeId: 2,
+          children: [
+            { role: "link", name: "Home", backendNodeId: 3 },
+            { role: "link", name: "About", backendNodeId: 4 },
+          ],
+        },
+      ],
+    });
+
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler(
+      { maxDepth: 1 },
+      { signal: new AbortController().signal },
+    );
+
+    const text = result.content[0].text;
+    // Root and its direct children should be visible
+    expect(text).toContain("WebArea");
+    expect(text).toContain("Nav");
+    // Grandchildren should be replaced with child count
+    expect(text).toContain("... 2 children");
+    // The actual grandchildren should NOT appear as their own lines
+    expect(text).not.toContain('link "Home"');
+    expect(text).not.toContain('link "About"');
+  });
+
+  it("maxDepth is ignored for format: json", async () => {
+    const handler = getToolHandler(server, "browser_a11y_snapshot");
+    const result = await handler(
+      { format: "json", maxDepth: 0 },
+      { signal: new AbortController().signal },
+    );
+
+    // JSON format ignores maxDepth — full tree is returned
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.role).toBe("WebArea");
+    expect(parsed.children).toHaveLength(2);
   });
 });
 

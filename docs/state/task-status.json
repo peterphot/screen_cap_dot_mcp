@@ -1,19 +1,25 @@
 {
-  "feature": "pp-14-ref-support-click-type-hover",
+  "feature": "pp-21-a11y-formatter",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-14",
+    "sourceTicket": "PP-21",
     "mapping": {
-      "T001": { "ticketId": "PP-14", "identifier": "PP-14" },
-      "T002": { "ticketId": "PP-14", "identifier": "PP-14" },
-      "T003": { "ticketId": "PP-14", "identifier": "PP-14" }
+      "T001": { "ticketId": "PP-21", "identifier": "PP-21" },
+      "T002": { "ticketId": "PP-21", "identifier": "PP-21" },
+      "T003": { "ticketId": "PP-21", "identifier": "PP-21" },
+      "T004": { "ticketId": "PP-21", "identifier": "PP-21" },
+      "T005": { "ticketId": "PP-21", "identifier": "PP-21" },
+      "T006": { "ticketId": "PP-21", "identifier": "PP-21" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Test: Write failing tests for ref support and browser_hover" },
-    "T002": { "status": "complete", "description": "Implement: ref support in click/type, browser_hover, clearRefs on navigate" },
-    "T003": { "status": "complete", "description": "Document: Update module docblock (8 -> 9 tools)" }
+    "T001": { "status": "in_progress", "description": "Test: filterTree tests" },
+    "T002": { "status": "pending", "description": "Test: formatA11yTree tests" },
+    "T003": { "status": "pending", "description": "Implement: a11y-formatter.ts" },
+    "T004": { "status": "pending", "description": "Test: observation.ts format/maxDepth params" },
+    "T005": { "status": "pending", "description": "Implement: observation.ts integration" },
+    "T006": { "status": "pending", "description": "Update: existing observation tests for new default" }
   }
 }
