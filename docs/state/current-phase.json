@@ -1,9 +1,9 @@
 {
-  "feature": "pp-14-ref-support-click-type-hover",
-  "phase": "BUILD_COMPLETE",
-  "currentTask": null,
-  "status": "complete",
-  "lastUpdated": "2026-03-03T08:02:00Z",
+  "feature": "pp-21-a11y-formatter",
+  "phase": "BUILD",
+  "currentTask": "T001",
+  "status": "in_progress",
+  "lastUpdated": "2026-03-04T00:00:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-14"
+  "sourceTicket": "PP-21"
 }
