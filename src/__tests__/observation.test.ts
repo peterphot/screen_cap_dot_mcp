@@ -397,6 +397,20 @@ describe("browser_screenshot", () => {
       expect(mockPage.screenshot).not.toHaveBeenCalled();
     });
 
+    it("returns error when annotate is combined with selector, fullPage, or savePath", async () => {
+      const handler = getToolHandler(server, "browser_screenshot");
+
+      for (const incompatible of [
+        { annotate: true, selector: "#foo" },
+        { annotate: true, fullPage: true },
+        { annotate: true, savePath: "/tmp/screen-cap-screenshots/out.png" },
+      ]) {
+        const result = await handler(incompatible, { signal: new AbortController().signal });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("cannot be combined");
+      }
+    });
+
     it("injects overlay, takes screenshot, and removes overlay when refs exist", async () => {
       // Set up refs: e1 -> backendNodeId 10, e5 -> backendNodeId 50
       mockHasRefs.mockReturnValue(true);
@@ -410,9 +424,6 @@ describe("browser_screenshot", () => {
         [50, { x: 400, y: 300, width: 120, height: 40 }],
       ]));
 
-      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
-      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
-
       const handler = getToolHandler(server, "browser_screenshot");
       const result = await handler(
         { annotate: true },
@@ -423,22 +434,24 @@ describe("browser_screenshot", () => {
       expect(mockGetAllRefs).toHaveBeenCalled();
       // Should have called batchGetBoundingBoxes with all backendNodeIds
       expect(mockBatchGetBoundingBoxes).toHaveBeenCalledWith([10, 50]);
-      // Should have called CDP Runtime.evaluate twice (inject then remove)
-      expect(mockCDPSend).toHaveBeenCalledWith("Runtime.evaluate", expect.objectContaining({
-        expression: expect.stringContaining("__scm_annotation_overlay"),
-      }));
+      // Should have called page.evaluate twice (inject overlay then remove overlay)
+      expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
+      // First call injects overlay with label data as argument
+      expect(mockPage.evaluate).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.arrayContaining([
+          expect.objectContaining({ ref: "e1" }),
+          expect.objectContaining({ ref: "e5" }),
+        ]),
+      );
       // Screenshot should have been taken
       expect(mockPage.screenshot).toHaveBeenCalled();
       // Should return image content block
       expect(result.content[0].type).toBe("image");
       expect(result.content[0].mimeType).toBe("image/png");
-      // Verify overlay removal was called (second Runtime.evaluate call)
-      const cdpCalls = mockCDPSend.mock.calls.filter(
-        (call: unknown[]) => call[0] === "Runtime.evaluate",
-      );
-      expect(cdpCalls.length).toBe(2);
-      // Second call should remove the overlay
-      expect(cdpCalls[1][1].expression).toContain("remove");
+      // Second call removes overlay (no extra args beyond the function)
+      const secondCall = mockPage.evaluate.mock.calls[1];
+      expect(secondCall).toHaveLength(1); // just the function, no args
     });
 
     it("excludes off-screen elements (null bounding box) from overlay", async () => {
@@ -455,9 +468,6 @@ describe("browser_screenshot", () => {
         [30, null],
       ]));
 
-      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
-      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
-
       const handler = getToolHandler(server, "browser_screenshot");
       const result = await handler(
         { annotate: true },
@@ -466,18 +476,13 @@ describe("browser_screenshot", () => {
 
       // Should still produce a screenshot
       expect(result.content[0].type).toBe("image");
-      // The inject call's expression should contain only the visible ref "e1"
-      const injectCall = mockCDPSend.mock.calls.find(
-        (call: unknown[]) =>
-          call[0] === "Runtime.evaluate" &&
-          (call[1] as { expression: string }).expression.includes("__scm_annotation_overlay"),
-      );
+      // The inject call should pass only visible labels as the second argument
+      const injectCall = mockPage.evaluate.mock.calls[0];
       expect(injectCall).toBeTruthy();
-      const expr = (injectCall![1] as { expression: string }).expression;
-      expect(expr).toContain("e1");
-      // e2 and e3 should not appear in the label data
-      expect(expr).not.toContain('"e2"');
-      expect(expr).not.toContain('"e3"');
+      const labelsArg = injectCall[1] as Array<{ ref: string }>;
+      // Only e1 should appear in the label data
+      expect(labelsArg).toHaveLength(1);
+      expect(labelsArg[0].ref).toBe("e1");
     });
 
     it("takes normal screenshot with text note when all elements are off-screen", async () => {
@@ -515,8 +520,6 @@ describe("browser_screenshot", () => {
         [10, { x: 100, y: 200, width: 80, height: 30 }],
       ]));
 
-      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
-      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
       // Screenshot throws an error
       mockPage.screenshot.mockRejectedValue(new Error("Screenshot failed"));
 
@@ -530,25 +533,20 @@ describe("browser_screenshot", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Screenshot failed");
       // Overlay removal should still have been called (cleanup in finally block)
-      const removeCalls = mockCDPSend.mock.calls.filter(
-        (call: unknown[]) =>
-          call[0] === "Runtime.evaluate" &&
-          (call[1] as { expression: string }).expression.includes("remove"),
-      );
-      expect(removeCalls.length).toBeGreaterThanOrEqual(1);
+      // page.evaluate called twice: once for inject, once for remove
+      expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
     });
 
-    it("does not use ALLOW_EVALUATE gating for overlay injection", async () => {
+    it("uses page.evaluate for overlay injection (not gated by ALLOW_EVALUATE)", async () => {
       // The overlay injection is an internal operation and should work
-      // regardless of any ALLOW_EVALUATE setting
+      // regardless of any ALLOW_EVALUATE setting. It uses page.evaluate
+      // directly, which is NOT gated by ALLOW_EVALUATE (that gate only
+      // applies to the browser_evaluate MCP tool).
       mockHasRefs.mockReturnValue(true);
       mockGetAllRefs.mockReturnValue(new Map([["e1", 10]]));
       mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
         [10, { x: 50, y: 50, width: 60, height: 20 }],
       ]));
-
-      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
-      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
 
       const handler = getToolHandler(server, "browser_screenshot");
       const result = await handler(
@@ -556,15 +554,11 @@ describe("browser_screenshot", () => {
         { signal: new AbortController().signal },
       );
 
-      // Should succeed and use CDP Runtime.evaluate directly (not page.evaluate)
+      // Should succeed using page.evaluate for both inject and remove
       expect(result.content[0].type).toBe("image");
-      expect(mockCDPSend).toHaveBeenCalledWith(
-        "Runtime.evaluate",
-        expect.anything(),
-      );
-      // page.evaluate should NOT have been called for overlay operations
-      // (page.evaluate might be gated by ALLOW_EVALUATE, but CDP Runtime.evaluate is not)
-      expect(mockPage.evaluate).not.toHaveBeenCalled();
+      expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
+      // CDP session should NOT have been used for overlay operations
+      expect(mockEnsureCDPSession).not.toHaveBeenCalled();
     });
   });
 
