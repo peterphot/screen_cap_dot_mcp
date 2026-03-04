@@ -16,8 +16,13 @@
 
 import { ensureCDPSession } from "../browser.js";
 
+/** Maximum perpendicular arc offset in pixels, prevents excessive curvature on long moves. */
+const MAX_ARC_OFFSET_PX = 60;
+
 // ── Module-level state ──────────────────────────────────────────────────
 
+// Single-cursor assumption: tied to the single-browser-session architecture.
+// Not safe for concurrent use across multiple callers.
 let lastX = 0;
 let lastY = 0;
 
@@ -30,6 +35,16 @@ let lastY = 0;
 export function resetMousePosition(): void {
   lastX = 0;
   lastY = 0;
+}
+
+/**
+ * Update the tracked mouse position to (x, y).
+ * Called from non-animated interaction functions so the next animated
+ * move arcs from the correct origin.
+ */
+export function setMousePosition(x: number, y: number): void {
+  lastX = x;
+  lastY = y;
 }
 
 /**
@@ -89,7 +104,7 @@ export function computeBezierPath(
 
   // Perpendicular offset for arc (proportional to distance, capped)
   // Perpendicular to (dx, dy) is (-dy, dx)
-  const arcAmount = Math.min(distance * 0.15, 60);
+  const arcAmount = Math.min(distance * 0.15, MAX_ARC_OFFSET_PX);
 
   // Normalized perpendicular vector
   let perpX = 0;
@@ -157,8 +172,8 @@ export async function animateMouseTo(
   const dy = y - lastY;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  const steps = options?.steps ?? 25;
-  const duration = options?.duration ?? computeDuration(distance);
+  const steps = Math.max(1, Math.round(options?.steps ?? 25));
+  const duration = Math.max(0, options?.duration ?? computeDuration(distance));
   const delay = duration / steps;
 
   const points = computeBezierPath(lastX, lastY, x, y, steps);

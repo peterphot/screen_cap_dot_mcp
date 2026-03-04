@@ -16,7 +16,7 @@
 import type { CDPSession } from "puppeteer-core";
 import { ensureCDPSession, ensurePage } from "./browser.js";
 import logger from "./util/logger.js";
-import { animateMouseTo } from "./util/mouse-animator.js";
+import { animateMouseTo, setMousePosition } from "./util/mouse-animator.js";
 
 /** Options for click and hover operations. */
 export interface InteractionOptions {
@@ -155,6 +155,7 @@ export async function clickByBackendNodeId(
       clickCount: 1,
     });
 
+    setMousePosition(center.x, center.y);
     return center;
   });
 }
@@ -230,6 +231,7 @@ export async function hoverByBackendNodeId(
       clickCount: 0,
     });
 
+    setMousePosition(center.x, center.y);
     return center;
   });
 }
@@ -277,6 +279,7 @@ export async function clickAtCoordinates(
     clickCount: 1,
   });
 
+  setMousePosition(x, y);
   return { x, y };
 }
 
@@ -313,6 +316,7 @@ export async function hoverAtCoordinates(
     clickCount: 0,
   });
 
+  setMousePosition(x, y);
   return { x, y };
 }
 

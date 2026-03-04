@@ -35,6 +35,7 @@ vi.mock("../util/logger.js", () => ({
 import {
   animateMouseTo,
   resetMousePosition,
+  setMousePosition,
   computeBezierPath,
   easeInOut,
   computeDuration,
@@ -258,5 +259,49 @@ describe("animateMouseTo", () => {
     // Should be a small x value near 0 (first step of 10 from 0 to 100)
     expect(firstX).toBeLessThan(50);
     expect(Math.abs(firstY)).toBeLessThan(30); // slight curve deviation ok
+  });
+
+  it("setMousePosition updates the origin for the next animation", async () => {
+    mockSend.mockResolvedValue(undefined);
+
+    // Set position to (300, 400) without animating
+    setMousePosition(300, 400);
+
+    // Next animation should start from (300, 400)
+    await animateMouseTo(350, 400, { steps: 5, duration: 10 });
+
+    const calls = mockSend.mock.calls;
+    // First point should be near (300,400) heading toward (350,400)
+    const firstEvent = calls[0][1];
+    expect(firstEvent.x).toBeGreaterThan(290);
+    expect(firstEvent.x).toBeLessThan(350);
+  });
+
+  it("clamps steps to at least 1 when given zero", async () => {
+    mockSend.mockResolvedValue(undefined);
+
+    await animateMouseTo(100, 100, { steps: 0, duration: 10 });
+
+    // Should dispatch at least 1 mouseMoved event (clamped from 0 to 1)
+    expect(mockSend.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clamps negative steps to at least 1", async () => {
+    mockSend.mockResolvedValue(undefined);
+
+    await animateMouseTo(100, 100, { steps: -5, duration: 10 });
+
+    // Should dispatch at least 1 mouseMoved event (clamped from -5 to 1)
+    expect(mockSend.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clamps negative duration to 0", async () => {
+    mockSend.mockResolvedValue(undefined);
+
+    // Should not throw with negative duration
+    await animateMouseTo(100, 100, { steps: 3, duration: -100 });
+
+    // All 3 steps should still be dispatched
+    expect(mockSend.mock.calls.length).toBe(3);
   });
 });

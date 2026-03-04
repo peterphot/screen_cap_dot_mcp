@@ -28,10 +28,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
-const { mockSend, mockEvaluate, mockAnimateMouseTo } = vi.hoisted(() => ({
+const { mockSend, mockEvaluate, mockAnimateMouseTo, mockSetMousePosition } = vi.hoisted(() => ({
   mockSend: vi.fn(),
   mockEvaluate: vi.fn(),
   mockAnimateMouseTo: vi.fn(),
+  mockSetMousePosition: vi.fn(),
 }));
 
 vi.mock("../browser.js", () => ({
@@ -45,6 +46,7 @@ vi.mock("../util/logger.js", () => ({
 
 vi.mock("../util/mouse-animator.js", () => ({
   animateMouseTo: (...args: unknown[]) => mockAnimateMouseTo(...args),
+  setMousePosition: (...args: unknown[]) => mockSetMousePosition(...args),
 }));
 
 import {
@@ -786,5 +788,51 @@ describe("animate option", () => {
     await clickByBackendNodeId(42, { animate: false });
 
     expect(mockAnimateMouseTo).not.toHaveBeenCalled();
+  });
+});
+
+// ── setMousePosition sync ────────────────────────────────────────────────
+
+describe("setMousePosition sync after interaction", () => {
+  it("clickByBackendNodeId calls setMousePosition with final coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickByBackendNodeId(42);
+
+    expect(mockSetMousePosition).toHaveBeenCalledWith(50, 50);
+  });
+
+  it("hoverByBackendNodeId calls setMousePosition with final coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverByBackendNodeId(42);
+
+    expect(mockSetMousePosition).toHaveBeenCalledWith(50, 50);
+  });
+
+  it("clickAtCoordinates calls setMousePosition with the coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(150, 250);
+
+    expect(mockSetMousePosition).toHaveBeenCalledWith(150, 250);
+  });
+
+  it("hoverAtCoordinates calls setMousePosition with the coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(300, 400);
+
+    expect(mockSetMousePosition).toHaveBeenCalledWith(300, 400);
   });
 });

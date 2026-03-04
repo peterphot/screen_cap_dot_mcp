@@ -17,6 +17,9 @@ import type { InteractionOptions } from "../cdp-helpers.js";
  * For refs, uses CDP clickByBackendNodeId.
  * For selectors, waits for visibility then clicks via Puppeteer.
  *
+ * Note: the `animate` option only applies to the ref-based CDP path.
+ * Selector-based interactions use Puppeteer's own mouse movement.
+ *
  * @param page - Optional page instance (will call ensurePage() if not provided)
  * @param options - Optional interaction options (e.g. animate for smooth cursor movement)
  */
@@ -73,6 +76,9 @@ export async function performType(
  * Hover over an element by selector or ref.
  * For refs, uses CDP hoverByBackendNodeId.
  * For selectors, waits for visibility then hovers via Puppeteer.
+ *
+ * Note: the `animate` option only applies to the ref-based CDP path.
+ * Selector-based interactions use Puppeteer's own mouse movement.
  *
  * @param page - Optional page instance (will call ensurePage() if not provided)
  * @param options - Optional interaction options (e.g. animate for smooth cursor movement)
