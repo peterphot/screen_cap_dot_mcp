@@ -107,7 +107,7 @@ export class FlowValidator {
    */
   private hasMatchStepsRecursive(steps: FlowStep[]): boolean {
     for (const step of steps) {
-      if ((step.action === "click" || step.action === "type" || step.action === "hover") && "match" in step) {
+      if ((step.action === "click" || step.action === "type" || step.action === "hover") && "match" in step && (step as Record<string, unknown>).match) {
         return true;
       }
       if (this.isConditionalStep(step)) {

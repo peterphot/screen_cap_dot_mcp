@@ -339,8 +339,22 @@ export class FlowRunner {
 
         // Nested steps use fail-fast semantics: an error in a nested step
         // propagates up and fails the entire conditional step.
-        for (const nestedStep of branchSteps) {
+        for (let j = 0; j < branchSteps.length; j++) {
+          const nestedStep = branchSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot);
+          // Invalidate snapshot after any step that mutates the page
+          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "hover", "hover_at"].includes(nestedStep.action)) {
+            branchSnapshot = undefined;
+          }
+          // Re-fetch snapshot if invalidated and remaining steps use match
+          if (!branchSnapshot && j < branchSteps.length - 1) {
+            const remaining = branchSteps.slice(j + 1);
+            const needsMatch = remaining.some((s) => "match" in s && (s as Record<string, unknown>).match);
+            if (needsMatch) {
+              const snap = await page.accessibility.snapshot({ interestingOnly: false });
+              if (snap) branchSnapshot = snap as A11ySnapshotNode;
+            }
+          }
         }
         break;
       }

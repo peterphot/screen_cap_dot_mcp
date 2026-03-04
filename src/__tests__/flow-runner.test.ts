@@ -1555,4 +1555,47 @@ describe("match-based steps", () => {
       { snapshot: fakeSnapshot },
     );
   });
+
+  it("invalidates branch snapshot after a mutating step in conditional branch", async () => {
+    const snapshot1 = { role: "WebArea", name: "Before" };
+    const snapshot2 = { role: "WebArea", name: "After" };
+    mockPage.accessibility.snapshot
+      .mockResolvedValueOnce(snapshot1)   // initial branch snapshot
+      .mockResolvedValueOnce(snapshot2);  // re-fetched after click invalidated cache
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "invalidate-branch-snapshot",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          then: [
+            // First match step uses cached snapshot1
+            { action: "click", match: { role: "button", name: "Accept" } },
+            // Second match step should get a fresh snapshot (snapshot2)
+            // because the click above mutated the page
+            { action: "click", match: { role: "button", name: "Continue" } },
+          ],
+          else: [],
+        },
+      ],
+    };
+
+    await runner.run(flow);
+
+    // 2 snapshots: one for initial branch cache, one re-fetched after click
+    expect(mockPage.accessibility.snapshot).toHaveBeenCalledTimes(2);
+    // First match step gets snapshot1
+    expect(mockResolveMatch).toHaveBeenNthCalledWith(1,
+      { role: "button", name: "Accept" },
+      { snapshot: snapshot1 },
+    );
+    // Second match step gets snapshot2 (fresh)
+    expect(mockResolveMatch).toHaveBeenNthCalledWith(2,
+      { role: "button", name: "Continue" },
+      { snapshot: snapshot2 },
+    );
+  });
 });
