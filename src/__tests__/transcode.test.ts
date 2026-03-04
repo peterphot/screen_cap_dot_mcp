@@ -47,6 +47,7 @@ function execFileSucceeds() {
     (
       _cmd: string,
       _args: string[],
+      _options: unknown,
       callback: (err: Error | null, stdout: string, stderr: string) => void,
     ) => {
       callback(null, "", "");
@@ -62,6 +63,7 @@ function execFileFails(stderr: string) {
     (
       _cmd: string,
       _args: string[],
+      _options: unknown,
       callback: (err: Error | null, stdout: string, stderr: string) => void,
     ) => {
       callback(new Error("ffmpeg exited with code 1"), "", stderr);
