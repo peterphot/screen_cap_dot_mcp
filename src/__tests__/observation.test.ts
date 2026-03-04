@@ -17,18 +17,31 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // Mock the browser module
 const mockEnsurePage = vi.fn();
+const mockEnsureCDPSession = vi.fn();
 
 vi.mock("../browser.js", () => ({
   ensurePage: (...args: unknown[]) => mockEnsurePage(...args),
+  ensureCDPSession: (...args: unknown[]) => mockEnsureCDPSession(...args),
 }));
 
 // Mock the ref-store module
 const mockClearRefs = vi.fn();
 const mockAllocateRef = vi.fn();
+const mockGetAllRefs = vi.fn();
+const mockHasRefs = vi.fn();
 
 vi.mock("../ref-store.js", () => ({
   clearRefs: (...args: unknown[]) => mockClearRefs(...args),
   allocateRef: (...args: unknown[]) => mockAllocateRef(...args),
+  getAllRefs: (...args: unknown[]) => mockGetAllRefs(...args),
+  hasRefs: (...args: unknown[]) => mockHasRefs(...args),
+}));
+
+// Mock the cdp-helpers module (used by annotated screenshot)
+const mockBatchGetBoundingBoxes = vi.fn();
+
+vi.mock("../cdp-helpers.js", () => ({
+  batchGetBoundingBoxes: (...args: unknown[]) => mockBatchGetBoundingBoxes(...args),
 }));
 
 // Mock node:fs/promises for non-savePath tests (e.g. writeFile used by a11y, etc.)
@@ -158,6 +171,9 @@ beforeEach(async () => {
   };
 
   mockEnsurePage.mockResolvedValue(mockPage);
+  // Mock CDP session for annotated screenshot overlay injection/removal
+  const mockCDPSend = vi.fn().mockResolvedValue(undefined);
+  mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
   mockWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
   mockSafeWriteFile.mockResolvedValue(undefined);
@@ -174,6 +190,11 @@ beforeEach(async () => {
     refCounter += 1;
     return `e${refCounter}`;
   });
+
+  // Default: no refs available (for annotated screenshot tests)
+  mockHasRefs.mockReturnValue(false);
+  mockGetAllRefs.mockReturnValue(new Map());
+  mockBatchGetBoundingBoxes.mockResolvedValue(new Map());
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -355,6 +376,227 @@ describe("browser_screenshot", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toContain("Permission denied");
+  });
+
+  // ── annotate mode ───────────────────────────────────────────────────
+
+  describe("annotate: true", () => {
+    it("returns error text when no refs exist (no a11y snapshot taken)", async () => {
+      mockHasRefs.mockReturnValue(false);
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].type).toBe("text");
+      expect(result.content[0].text).toContain("No refs available");
+      expect(result.content[0].text).toContain("browser_a11y_snapshot");
+      // Should NOT take a screenshot at all
+      expect(mockPage.screenshot).not.toHaveBeenCalled();
+    });
+
+    it("injects overlay, takes screenshot, and removes overlay when refs exist", async () => {
+      // Set up refs: e1 -> backendNodeId 10, e5 -> backendNodeId 50
+      mockHasRefs.mockReturnValue(true);
+      mockGetAllRefs.mockReturnValue(new Map([
+        ["e1", 10],
+        ["e5", 50],
+      ]));
+      // Both elements are visible (have bounding boxes)
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, { x: 100, y: 200, width: 80, height: 30 }],
+        [50, { x: 400, y: 300, width: 120, height: 40 }],
+      ]));
+
+      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
+      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should have called getAllRefs to get ref->backendNodeId mapping
+      expect(mockGetAllRefs).toHaveBeenCalled();
+      // Should have called batchGetBoundingBoxes with all backendNodeIds
+      expect(mockBatchGetBoundingBoxes).toHaveBeenCalledWith([10, 50]);
+      // Should have called CDP Runtime.evaluate twice (inject then remove)
+      expect(mockCDPSend).toHaveBeenCalledWith("Runtime.evaluate", expect.objectContaining({
+        expression: expect.stringContaining("__scm_annotation_overlay"),
+      }));
+      // Screenshot should have been taken
+      expect(mockPage.screenshot).toHaveBeenCalled();
+      // Should return image content block
+      expect(result.content[0].type).toBe("image");
+      expect(result.content[0].mimeType).toBe("image/png");
+      // Verify overlay removal was called (second Runtime.evaluate call)
+      const cdpCalls = mockCDPSend.mock.calls.filter(
+        (call: unknown[]) => call[0] === "Runtime.evaluate",
+      );
+      expect(cdpCalls.length).toBe(2);
+      // Second call should remove the overlay
+      expect(cdpCalls[1][1].expression).toContain("remove");
+    });
+
+    it("excludes off-screen elements (null bounding box) from overlay", async () => {
+      mockHasRefs.mockReturnValue(true);
+      mockGetAllRefs.mockReturnValue(new Map([
+        ["e1", 10],
+        ["e2", 20],
+        ["e3", 30],
+      ]));
+      // Only e1 is visible; e2 is off-screen (null), e3 is also off-screen
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, { x: 100, y: 200, width: 80, height: 30 }],
+        [20, null],
+        [30, null],
+      ]));
+
+      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
+      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should still produce a screenshot
+      expect(result.content[0].type).toBe("image");
+      // The inject call's expression should contain only the visible ref "e1"
+      const injectCall = mockCDPSend.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === "Runtime.evaluate" &&
+          (call[1] as { expression: string }).expression.includes("__scm_annotation_overlay"),
+      );
+      expect(injectCall).toBeTruthy();
+      const expr = (injectCall![1] as { expression: string }).expression;
+      expect(expr).toContain("e1");
+      // e2 and e3 should not appear in the label data
+      expect(expr).not.toContain('"e2"');
+      expect(expr).not.toContain('"e3"');
+    });
+
+    it("takes normal screenshot with text note when all elements are off-screen", async () => {
+      mockHasRefs.mockReturnValue(true);
+      mockGetAllRefs.mockReturnValue(new Map([
+        ["e1", 10],
+        ["e2", 20],
+      ]));
+      // All elements are off-screen
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, null],
+        [20, null],
+      ]));
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should return image (normal screenshot) plus a text note
+      const imageContent = result.content.find((c: { type: string }) => c.type === "image");
+      const textContent = result.content.find((c: { type: string }) => c.type === "text");
+      expect(imageContent).toBeTruthy();
+      expect(textContent).toBeTruthy();
+      expect(textContent.text).toContain("off-screen");
+    });
+
+    it("cleans up overlay even if screenshot fails", async () => {
+      mockHasRefs.mockReturnValue(true);
+      mockGetAllRefs.mockReturnValue(new Map([
+        ["e1", 10],
+      ]));
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, { x: 100, y: 200, width: 80, height: 30 }],
+      ]));
+
+      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
+      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
+      // Screenshot throws an error
+      mockPage.screenshot.mockRejectedValue(new Error("Screenshot failed"));
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should return error
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Screenshot failed");
+      // Overlay removal should still have been called (cleanup in finally block)
+      const removeCalls = mockCDPSend.mock.calls.filter(
+        (call: unknown[]) =>
+          call[0] === "Runtime.evaluate" &&
+          (call[1] as { expression: string }).expression.includes("remove"),
+      );
+      expect(removeCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("does not use ALLOW_EVALUATE gating for overlay injection", async () => {
+      // The overlay injection is an internal operation and should work
+      // regardless of any ALLOW_EVALUATE setting
+      mockHasRefs.mockReturnValue(true);
+      mockGetAllRefs.mockReturnValue(new Map([["e1", 10]]));
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, { x: 50, y: 50, width: 60, height: 20 }],
+      ]));
+
+      const mockCDPSend = vi.fn().mockResolvedValue(undefined);
+      mockEnsureCDPSession.mockResolvedValue({ send: mockCDPSend });
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should succeed and use CDP Runtime.evaluate directly (not page.evaluate)
+      expect(result.content[0].type).toBe("image");
+      expect(mockCDPSend).toHaveBeenCalledWith(
+        "Runtime.evaluate",
+        expect.anything(),
+      );
+      // page.evaluate should NOT have been called for overlay operations
+      // (page.evaluate might be gated by ALLOW_EVALUATE, but CDP Runtime.evaluate is not)
+      expect(mockPage.evaluate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("annotate: false / omitted (no regression)", () => {
+    it("annotate: false produces normal screenshot (same as omitted)", async () => {
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: false },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe("image");
+      // Should not call any ref-store or CDP session methods
+      expect(mockGetAllRefs).not.toHaveBeenCalled();
+      expect(mockBatchGetBoundingBoxes).not.toHaveBeenCalled();
+      expect(mockEnsureCDPSession).not.toHaveBeenCalled();
+    });
+
+    it("omitting annotate produces normal screenshot (no annotation)", async () => {
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        {},
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe("image");
+      // Should not call any annotation-related methods
+      expect(mockGetAllRefs).not.toHaveBeenCalled();
+      expect(mockBatchGetBoundingBoxes).not.toHaveBeenCalled();
+    });
   });
 });
 
