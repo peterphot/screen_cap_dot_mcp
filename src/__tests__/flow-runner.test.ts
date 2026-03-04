@@ -1003,7 +1003,7 @@ describe("match-based steps", () => {
     expect(result.steps[0].success).toBe(true);
     expect(mockResolveMatch).toHaveBeenCalledWith(
       { role: "button", name: "Submit" },
-      expect.any(Object),
+      undefined,
     );
     expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100);
   });
@@ -1021,7 +1021,7 @@ describe("match-based steps", () => {
     expect(result.steps[0].success).toBe(true);
     expect(mockResolveMatch).toHaveBeenCalledWith(
       { role: "textbox", name: "Search" },
-      expect.any(Object),
+      undefined,
     );
     expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(200, "query", undefined);
   });
@@ -1053,7 +1053,7 @@ describe("match-based steps", () => {
     expect(result.steps[0].success).toBe(true);
     expect(mockResolveMatch).toHaveBeenCalledWith(
       { role: "menuitem", name: "File" },
-      expect.any(Object),
+      undefined,
     );
     expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(400);
   });
@@ -1071,7 +1071,7 @@ describe("match-based steps", () => {
     expect(result.steps[0].success).toBe(true);
     expect(mockResolveMatch).toHaveBeenCalledWith(
       { role: "button", name: "Column", index: 2 },
-      expect.any(Object),
+      undefined,
     );
   });
 

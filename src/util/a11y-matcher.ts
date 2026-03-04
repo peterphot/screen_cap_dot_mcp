@@ -14,7 +14,6 @@
 import type { A11ySnapshotNode } from "./a11y-formatter.js";
 import { ensurePage } from "../browser.js";
 import { allocateRef } from "../ref-store.js";
-import logger from "./logger.js";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -112,15 +111,26 @@ export async function resolveMatch(
     snapshot = options.snapshot;
   } else {
     const page = await ensurePage();
-    snapshot = (await page.accessibility.snapshot({
+    const raw = await page.accessibility.snapshot({
       interestingOnly: false,
-    })) as A11ySnapshotNode;
+    });
+    if (!raw) {
+      throw new Error("page.accessibility.snapshot() returned null — the page may not be ready.");
+    }
+    snapshot = raw as A11ySnapshotNode;
   }
 
-  // Find the match
-  const result = matchA11yNode(snapshot, criteria);
+  // Find the match — use early-exit limit when we don't need the full count.
+  if (!criteria.role && !criteria.name) {
+    throw new Error("match requires at least one of role or name");
+  }
 
-  if (!result) {
+  const index = criteria.index ?? 0;
+  const limit = index + 1;
+  const matches: A11ySnapshotNode[] = [];
+  collectMatches(snapshot, criteria, matches, 0, limit);
+
+  if (matches.length === 0 || index < 0 || index >= matches.length) {
     const parts: string[] = [];
     if (criteria.role) parts.push(`role="${criteria.role}"`);
     if (criteria.name) parts.push(`name="${criteria.name}"`);
@@ -131,29 +141,23 @@ export async function resolveMatch(
     );
   }
 
+  const matched = matches[index];
+
   // Validate the matched node has a backendNodeId
-  if (typeof result.node.backendNodeId !== "number") {
+  if (typeof matched.backendNodeId !== "number") {
     throw new Error(
-      `Matched node (role="${result.node.role}", name="${result.node.name}") ` +
+      `Matched node (role="${matched.role}", name="${matched.name}") ` +
         "has no backendNodeId. The node may not be interactable.",
     );
   }
 
-  // Log a warning if multiple matches were found
-  if (result.matchCount > 1 && criteria.index === undefined) {
-    logger.warn(
-      `match found ${result.matchCount} nodes matching criteria ` +
-        `(using first). Add "index" to select a specific one.`,
-    );
-  }
-
   // Allocate a ref for the matched node
-  const ref = allocateRef(result.node.backendNodeId);
+  const ref = allocateRef(matched.backendNodeId);
 
   return {
     ref,
-    backendNodeId: result.node.backendNodeId,
-    matchCount: result.matchCount,
+    backendNodeId: matched.backendNodeId,
+    matchCount: matches.length,
   };
 }
 
@@ -163,23 +167,29 @@ export async function resolveMatch(
 const MAX_DEPTH = 512;
 
 /**
- * Recursively collect all nodes matching the criteria.
+ * Recursively collect nodes matching the criteria.
+ *
+ * @param limit - Stop collecting once this many matches are found (0 = unlimited).
  */
 function collectMatches(
   node: A11ySnapshotNode,
   criteria: MatchSelector,
   matches: A11ySnapshotNode[],
   depth = 0,
+  limit = 0,
 ): void {
   if (depth > MAX_DEPTH) return;
+  if (limit > 0 && matches.length >= limit) return;
 
   if (nodeMatches(node, criteria)) {
     matches.push(node);
+    if (limit > 0 && matches.length >= limit) return;
   }
 
   if (node.children) {
     for (const child of node.children) {
-      collectMatches(child, criteria, matches, depth + 1);
+      if (limit > 0 && matches.length >= limit) return;
+      collectMatches(child, criteria, matches, depth + 1, limit);
     }
   }
 }
