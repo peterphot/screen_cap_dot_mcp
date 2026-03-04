@@ -3,5 +3,8 @@
  * Implementation pending (PP-41).
  */
 export async function transcodeMp4ToH264(filePath: string): Promise<string> {
+  if (!filePath.endsWith(".mp4")) {
+    return filePath;
+  }
   throw new Error("Not implemented");
 }
