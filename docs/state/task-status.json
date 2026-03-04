@@ -1,14 +1,16 @@
 {
-  "feature": "pp-29-annotated-screenshot-batch-limit",
+  "feature": "flow-dry-run-validation",
   "tickets": {
     "enabled": false,
-    "type": "local",
-    "team": "Engineering",
-    "sourceTicket": "PP-29",
+    "type": null,
+    "team": null,
+    "sourceTicket": "PP-30",
     "mapping": {}
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Raise batchGetBoundingBoxes limit from 500 to 1000 + tests" },
-    "T002": { "status": "complete", "description": "Add priority filtering in takeAnnotatedScreenshot + filtering count note + tests" }
+    "T001": { "status": "complete", "description": "Write tests for flow validator (src/__tests__/flow-validator.test.ts)" },
+    "T002": { "status": "complete", "description": "Implement flow validator module (src/flow/validator.ts)" },
+    "T003": { "status": "complete", "description": "Write tests for browser_validate_flow tool registration" },
+    "T004": { "status": "complete", "description": "Register browser_validate_flow tool in src/tools/flow.ts" }
   }
 }

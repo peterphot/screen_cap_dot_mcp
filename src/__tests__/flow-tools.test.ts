@@ -1,11 +1,13 @@
 /**
  * Unit tests for flow tools (src/tools/flow.ts)
  *
- * All file system and FlowRunner interactions are mocked. These tests verify:
- * - All 3 tools are registered on the McpServer with correct names/descriptions
+ * All file system and FlowRunner/FlowValidator interactions are mocked. These tests verify:
+ * - All 4 tools are registered on the McpServer with correct names/descriptions
  * - browser_run_flow executes named flows from disk
  * - browser_run_flow executes inline flow definitions
  * - browser_run_flow validates flow definitions
+ * - browser_validate_flow dry-runs named or inline flows without executing actions
+ * - browser_validate_flow returns structured pass/fail reports
  * - browser_list_flows lists JSON files with metadata
  * - browser_save_flow validates and persists flow definitions
  * - Error paths return error text with isError: true
@@ -51,6 +53,14 @@ const mockFlowRunnerRun = vi.fn();
 vi.mock("../flow/runner.js", () => ({
   FlowRunner: class {
     run = mockFlowRunnerRun;
+  },
+}));
+
+const mockFlowValidatorValidate = vi.fn();
+
+vi.mock("../flow/validator.js", () => ({
+  FlowValidator: class {
+    validate = mockFlowValidatorValidate;
   },
 }));
 
@@ -119,13 +129,14 @@ afterEach(() => {
 
 describe("Flow tools registration", () => {
 
-  it("registers all 3 flow tools", () => {
+  it("registers all 4 flow tools", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
     expect(toolNames).toContain("browser_run_flow");
     expect(toolNames).toContain("browser_list_flows");
     expect(toolNames).toContain("browser_save_flow");
+    expect(toolNames).toContain("browser_validate_flow");
   });
 
   // ── browser_run_flow ───────────────────────────────────────────────
@@ -408,6 +419,187 @@ describe("Flow tools registration", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Disk full");
+    });
+  });
+
+  // ── browser_validate_flow ────────────────────────────────────────
+
+  describe("browser_validate_flow", () => {
+    const validFlow = {
+      name: "test-flow",
+      steps: [{ action: "navigate", url: "https://example.com" }],
+    };
+
+    const mockValidateResult = {
+      valid: true,
+      steps: [
+        { index: 0, action: "navigate", status: "skip" },
+      ],
+    };
+
+    it("validates an inline flow definition", async () => {
+      mockFlowValidatorValidate.mockResolvedValue(mockValidateResult);
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: validFlow });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain("PASS");
+      expect(mockFlowValidatorValidate).toHaveBeenCalled();
+    });
+
+    it("loads and validates a named flow from disk", async () => {
+      mockReadFile.mockResolvedValue(JSON.stringify(validFlow));
+      mockFlowValidatorValidate.mockResolvedValue(mockValidateResult);
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ name: "test-flow" });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain("PASS");
+      expect(mockReadFile).toHaveBeenCalledWith(
+        expect.stringContaining("test-flow.json"),
+        "utf-8",
+      );
+    });
+
+    it("passes custom timeout to validator", async () => {
+      mockFlowValidatorValidate.mockResolvedValue(mockValidateResult);
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      await handler({ flow: validFlow, timeout: 10000 });
+
+      expect(mockFlowValidatorValidate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "test-flow" }),
+        { timeout: 10000 },
+      );
+    });
+
+    it("uses default timeout when not provided", async () => {
+      mockFlowValidatorValidate.mockResolvedValue(mockValidateResult);
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      await handler({ flow: validFlow });
+
+      expect(mockFlowValidatorValidate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "test-flow" }),
+        { timeout: 5000 },
+      );
+    });
+
+    it("returns error for invalid inline flow", async () => {
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: { steps: [] } });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid flow definition");
+    });
+
+    it("returns error when named flow not found", async () => {
+      mockReadFile.mockRejectedValue(new Error("ENOENT"));
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ name: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Flow not found");
+    });
+
+    it("returns error when neither name nor flow provided", async () => {
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("provide either");
+    });
+
+    it("reports FAIL when validation finds missing elements", async () => {
+      mockFlowValidatorValidate.mockResolvedValue({
+        valid: false,
+        steps: [
+          { index: 0, action: "click", status: "ok" },
+          { index: 1, action: "type", status: "missing", detail: "Timeout waiting for selector" },
+          { index: 2, action: "navigate", status: "skip" },
+        ],
+      });
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: validFlow });
+
+      expect(result.content[0].text).toContain("FAIL");
+      expect(result.content[0].text).toContain("1 ok");
+      expect(result.content[0].text).toContain("1 missing");
+      expect(result.content[0].text).toContain("1 skip");
+      expect(result.content[0].text).toContain("Timeout waiting for selector");
+    });
+
+    it("reports PASS with step counts", async () => {
+      mockFlowValidatorValidate.mockResolvedValue({
+        valid: true,
+        steps: [
+          { index: 0, action: "click", status: "ok" },
+          { index: 1, action: "navigate", status: "skip" },
+          { index: 2, action: "hover", status: "ok" },
+        ],
+      });
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: validFlow });
+
+      expect(result.content[0].text).toContain("PASS");
+      expect(result.content[0].text).toContain("2 ok");
+      expect(result.content[0].text).toContain("0 missing");
+      expect(result.content[0].text).toContain("1 skip");
+    });
+
+    it("includes JSON report in output", async () => {
+      const report = {
+        valid: true,
+        steps: [{ index: 0, action: "click", status: "ok" }],
+      };
+      mockFlowValidatorValidate.mockResolvedValue(report);
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: validFlow });
+
+      // The output should include the JSON report
+      const text = result.content[0].text;
+      expect(text).toContain('"valid"');
+      expect(text).toContain('"steps"');
+    });
+
+    it("catches validator exceptions", async () => {
+      mockFlowValidatorValidate.mockRejectedValue(new Error("Browser not connected"));
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ flow: validFlow });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Browser not connected");
+    });
+
+    it("rejects flow name with path traversal", async () => {
+      const handler = getToolHandler(server, "browser_validate_flow");
+
+      const result = await handler({ name: "../../../etc/passwd" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid flow name");
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it("detects symlink escape", async () => {
+      mockConfinePath.mockResolvedValueOnce({
+        error: `Path must be within ${RESOLVED_FLOWS_DIR} (symlink detected)`,
+      });
+
+      const handler = getToolHandler(server, "browser_validate_flow");
+      const result = await handler({ name: "legit" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("symlink detected");
     });
   });
 

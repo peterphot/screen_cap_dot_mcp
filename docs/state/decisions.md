@@ -1,19 +1,19 @@
-# Decision Log: PP-29 Annotated Screenshot Batch Limit Fix
-_Initialized: 2026-03-04T18:00:00Z_
+# Decision Log: PP-30 Flow Dry-Run Validation
+_Initialized: 2026-03-04T00:00:00Z_
 
 ## Orchestrate Phase
-_Captured: 2026-03-04T18:00:00Z_
+_Captured: 2026-03-04T00:00:00Z_
 
 ### D-ORCH-001: Scale assessment - SMALL
 - **Who decided**: claude
-- **What**: Classify as SMALL (2 tasks)
-- **Why**: Ticket is well-defined with two files to change and clear acceptance criteria
-- **Alternatives**: MEDIUM (would add unnecessary overhead)
-- **Context**: Ticket PP-29 specifies exact files and changes needed
+- **What**: Classify as SMALL (4 tasks)
+- **Why**: Single new module (validator.ts) + single tool registration + tests. Well-scoped ticket.
+- **Alternatives**: MEDIUM (would add overhead for a single-module feature)
+- **Context**: PP-30 adds one validator module and one tool, with clear acceptance criteria
 
 ### D-ORCH-002: Orchestration pattern - STANDARD
 - **Who decided**: claude
-- **What**: Use STANDARD sequential pattern
-- **Why**: Tasks have dependencies (T002's filtering depends on T001's raised limit)
-- **Alternatives**: PARALLEL (not applicable - tasks are sequential)
-- **Context**: 2 sequential tasks with dependencies
+- **What**: Use STANDARD sequential TDD pattern
+- **Why**: Tasks depend on each other (validator tests -> validator impl -> tool tests -> tool impl)
+- **Alternatives**: PARALLEL (not applicable, tasks are sequential)
+- **Context**: Classic TDD: write failing tests, then implement to make them pass
