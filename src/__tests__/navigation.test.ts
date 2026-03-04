@@ -352,7 +352,7 @@ describe("browser_click", () => {
     );
 
     expect(mockResolveRef).toHaveBeenCalledWith("e1");
-    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42, undefined);
     expect(result.content[0].text).toContain("e1");
     expect(result.isError).toBeFalsy();
   });
@@ -520,7 +520,7 @@ describe("browser_hover", () => {
     );
 
     expect(mockResolveRef).toHaveBeenCalledWith("e5");
-    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77);
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77, undefined);
     expect(result.content[0].text).toContain("e5");
     expect(result.isError).toBeFalsy();
   });

@@ -587,7 +587,7 @@ describe("FlowRunner", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
-    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42, undefined);
     expect(mockPage.click).not.toHaveBeenCalled();
   });
 
@@ -643,7 +643,7 @@ describe("FlowRunner", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
-    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77);
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(77, undefined);
     expect(mockPage.hover).not.toHaveBeenCalled();
   });
 
@@ -913,7 +913,7 @@ describe("coordinate-based steps", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(result.steps[0].action).toBe("click_at");
-    expect(mockClickAtCoordinates).toHaveBeenCalledWith(150, 250);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(150, 250, undefined);
   });
 
   it("executes hover_at step by calling hoverAtCoordinates", async () => {
@@ -926,7 +926,7 @@ describe("coordinate-based steps", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(result.steps[0].action).toBe("hover_at");
-    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(300, 400);
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(300, 400, undefined);
   });
 
   it("captures error when click_at fails", async () => {
@@ -967,7 +967,7 @@ describe("coordinate-based steps", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(result.steps[0].label).toBe("chart-bar");
-    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, undefined);
     // Labeled steps get artifacts captured
     expect(result.steps[0].screenshotPath).toContain("chart-bar");
   });
@@ -982,7 +982,7 @@ describe("coordinate-based steps", () => {
 
     expect(result.steps[0].success).toBe(true);
     expect(result.steps[0].label).toBe("tooltip-area");
-    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600);
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600, undefined);
     expect(result.steps[0].screenshotPath).toContain("tooltip-area");
   });
 });
@@ -1095,7 +1095,7 @@ describe("match-based steps", () => {
       { role: "button", name: "Submit" },
       undefined,
     );
-    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100, undefined);
   });
 
   it("executes type step with match", async () => {
@@ -1145,7 +1145,7 @@ describe("match-based steps", () => {
       { role: "menuitem", name: "File" },
       undefined,
     );
-    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(400);
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(400, undefined);
   });
 
   it("passes index to resolveMatch when specified", async () => {
@@ -1382,7 +1382,7 @@ describe("match-based steps", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
-    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42, undefined);
   });
 
   it("handles if_visible with ref condition when ref is stale", async () => {
@@ -1426,7 +1426,7 @@ describe("match-based steps", () => {
     const result = await runner.run(flow);
 
     expect(result.steps[0].success).toBe(true);
-    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100, undefined);
   });
 
   it("handles if_visible with match condition when no match found", async () => {
@@ -1597,5 +1597,104 @@ describe("match-based steps", () => {
       { role: "button", name: "Continue" },
       { snapshot: snapshot2 },
     );
+  });
+});
+
+// ── Animation during recording ──────────────────────────────────────────
+
+describe("animation during recording", () => {
+  const runner = new FlowRunner();
+
+  it("passes animate:true to click_at when recording is enabled", async () => {
+    const flow: FlowDefinition = {
+      name: "animate-click-at",
+      recording: { enabled: true },
+      steps: [{ action: "click_at", x: 100, y: 200 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, { animate: true });
+  });
+
+  it("passes animate:true to hover_at when recording is enabled", async () => {
+    const flow: FlowDefinition = {
+      name: "animate-hover-at",
+      recording: { enabled: true },
+      steps: [{ action: "hover_at", x: 300, y: 400 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(300, 400, { animate: true });
+  });
+
+  it("passes animate:true to clickByBackendNodeId when recording + match", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 50, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "animate-click-match",
+      recording: { enabled: true },
+      steps: [{ action: "click", match: { role: "button", name: "Go" } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(50, { animate: true });
+  });
+
+  it("passes animate:true to hoverByBackendNodeId when recording + match", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e2", backendNodeId: 60, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "animate-hover-match",
+      recording: { enabled: true },
+      steps: [{ action: "hover", match: { role: "menuitem", name: "Help" } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(60, { animate: true });
+  });
+
+  it("per-step animate:false overrides recording default", async () => {
+    const flow: FlowDefinition = {
+      name: "animate-override-false",
+      recording: { enabled: true },
+      steps: [{ action: "click_at", x: 100, y: 200, animate: false }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, undefined);
+  });
+
+  it("per-step animate:true enables animation without recording", async () => {
+    const flow: FlowDefinition = {
+      name: "animate-explicit-true",
+      steps: [{ action: "click_at", x: 100, y: 200, animate: true }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, { animate: true });
+  });
+
+  it("no animate option when recording is off and step has no animate field", async () => {
+    const flow: FlowDefinition = {
+      name: "no-animate-default",
+      steps: [{ action: "click_at", x: 100, y: 200 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, undefined);
   });
 });
