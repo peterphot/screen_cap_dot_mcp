@@ -1,7 +1,7 @@
 /**
  * Navigation tools for the MCP server.
  *
- * Registers 13 browser automation tools on the McpServer instance:
+ * Registers 12 browser automation tools on the McpServer instance:
  * - browser_connect: Connect to Chrome via CDP
  * - browser_navigate: Navigate to URL
  * - browser_click: Click element by CSS selector or ref
@@ -12,7 +12,6 @@
  * - browser_press_key: Dispatch keyboard events (Escape, Tab, Enter, arrows, modifiers)
  * - browser_select: Select dropdown option
  * - browser_evaluate: Run arbitrary JS in page context
- * - browser_scroll_to_text: Scroll page until given text is visible
  * - browser_list_pages: List open tabs
  * - browser_switch_page: Switch to a different tab
  *
@@ -308,64 +307,6 @@ export function registerNavigationTools(server: McpServer): void {
       },
     );
   }
-
-  // ── browser_scroll_to_text ───────────────────────────────────────────
-
-  server.tool(
-    "browser_scroll_to_text",
-    "Scroll the page until a given text string is visible in the viewport. Uses case-insensitive partial matching against visible text nodes.",
-    {
-      text: z.string().min(1).describe("Text to search for on the page (case-insensitive partial match)"),
-      timeout: z.number().nonnegative().max(300_000).optional().describe("Timeout in ms (default: 10000)"),
-    },
-    async ({ text, timeout }) => {
-      try {
-        const page = await ensurePage();
-        const searchText = text.toLowerCase();
-        const _timeout = timeout ?? 10_000;
-
-        const found = await page.evaluate(
-          (txt: string) => {
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-            let node: Node | null;
-            while ((node = walker.nextNode())) {
-              const content = node.textContent ?? "";
-              if (content.toLowerCase().includes(txt)) {
-                const el = node.parentElement;
-                if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "center" });
-                  return true;
-                }
-              }
-            }
-            return false;
-          },
-          searchText,
-        );
-
-        if (!found) {
-          return {
-            content: [{ type: "text" as const, text: `Text "${text}" not found on page` }],
-            isError: true,
-          };
-        }
-
-        // Brief settle time for smooth scroll to complete
-        await new Promise((resolve) => setTimeout(resolve, 250));
-
-        logger.info(`Scrolled to text: "${text}" (timeout: ${_timeout}ms)`);
-
-        return {
-          content: [{ type: "text" as const, text: `Scrolled to text "${text}"` }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Error scrolling to text: ${(err as Error).message}` }],
-          isError: true,
-        };
-      }
-    },
-  );
 
   // ── browser_list_pages ───────────────────────────────────────────────
 

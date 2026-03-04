@@ -1,9 +1,10 @@
 /**
  * Scrolling tools for the MCP server.
  *
- * Registers 2 browser scrolling tools on the McpServer instance:
+ * Registers 3 browser scrolling tools on the McpServer instance:
  * - browser_scroll: Scroll page or container in a direction
  * - browser_scroll_to_element: Scroll element into view (by CSS selector or ref)
+ * - browser_scroll_to_text: Scroll page until given text is visible
  *
  * All handlers wrap their logic in try/catch and return error messages
  * as text content (never throw).
@@ -13,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ensurePage, ensureCDPSession } from "../browser.js";
 import { validateSelectorOrRef } from "../util/validate-selector-or-ref.js";
+import { scrollToText } from "../util/scroll-to-text.js";
 import logger from "../util/logger.js";
 
 /**
@@ -215,6 +217,41 @@ export function registerScrollingTools(server: McpServer): void {
               text: `Error scrolling to element "${target}": ${(err as Error).message}`,
             },
           ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_scroll_to_text ───────────────────────────────────────────
+
+  server.tool(
+    "browser_scroll_to_text",
+    "Scroll the page until a given text string is visible in the viewport. Uses case-insensitive partial matching against visible text nodes.",
+    {
+      text: z.string().min(1).max(1000).describe("Text to search for on the page (case-insensitive partial match)"),
+      timeout: z.number().nonnegative().finite().max(300_000).optional().describe("Timeout in ms (default: 10000)"),
+    },
+    async ({ text, timeout }) => {
+      try {
+        const page = await ensurePage();
+        await scrollToText(page, text, timeout);
+
+        logger.info(`Scrolled to text: "${text}"`);
+
+        return {
+          content: [{ type: "text" as const, text: `Scrolled to text "${text}"` }],
+        };
+      } catch (err) {
+        const message = (err as Error).message;
+        if (message.includes("not found")) {
+          return {
+            content: [{ type: "text" as const, text: `Text "${text}" not found on page` }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: `Error scrolling to text: ${message}` }],
           isError: true,
         };
       }

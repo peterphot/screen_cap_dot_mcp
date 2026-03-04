@@ -2,9 +2,10 @@
  * Unit tests for scrolling tools (src/tools/scrolling.ts)
  *
  * All browser module interactions are mocked. These tests verify:
- * - All 2 tools are registered on the McpServer with correct names/descriptions/schemas
+ * - All 3 tools are registered on the McpServer with correct names/descriptions/schemas
  * - browser_scroll scrolls page or container in the specified direction
  * - browser_scroll_to_element scrolls an element into view (by CSS selector or ref)
+ * - browser_scroll_to_text scrolls page until given text is visible
  * - Ref-based scrolling via CDP DOM.scrollIntoViewIfNeeded
  * - Error paths catch exceptions and return error text with isError: true (never throw)
  */
@@ -38,6 +39,12 @@ vi.mock("../util/logger.js", () => ({
     error: vi.fn(),
     setLogLevel: vi.fn(),
   },
+}));
+
+// Mock the scroll-to-text utility
+const mockScrollToText = vi.fn();
+vi.mock("../util/scroll-to-text.js", () => ({
+  scrollToText: (...args: unknown[]) => mockScrollToText(...args),
 }));
 
 // Mock page object
@@ -90,6 +97,7 @@ beforeEach(async () => {
   };
 
   mockEnsurePage.mockResolvedValue(mockPage);
+  mockScrollToText.mockResolvedValue(undefined);
 
   mockCDPSession = { send: mockCDPSend };
   mockEnsureCDPSession.mockResolvedValue(mockCDPSession);
@@ -104,17 +112,18 @@ beforeEach(async () => {
 // ── Tool Registration ───────────────────────────────────────────────────
 
 describe("registerScrollingTools", () => {
-  it("registers all 2 tools on the server", () => {
+  it("registers all 3 tools on the server", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
     expect(toolNames).toContain("browser_scroll");
     expect(toolNames).toContain("browser_scroll_to_element");
+    expect(toolNames).toContain("browser_scroll_to_text");
   });
 
   it("each tool has a description", () => {
     const tools = getRegisteredTools(server);
-    const scrollingTools = ["browser_scroll", "browser_scroll_to_element"];
+    const scrollingTools = ["browser_scroll", "browser_scroll_to_element", "browser_scroll_to_text"];
 
     for (const name of scrollingTools) {
       expect(tools[name].description, `Tool "${name}" should have a description`).toBeTruthy();
@@ -344,5 +353,72 @@ describe("browser_scroll_to_element", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("e1");
     expect(result.content[0].text).toContain("snapshot");
+  });
+});
+
+// ── browser_scroll_to_text ──────────────────────────────────────────────
+
+describe("browser_scroll_to_text", () => {
+  it("is registered as a tool on the server", () => {
+    const tools = getRegisteredTools(server);
+    expect(Object.keys(tools)).toContain("browser_scroll_to_text");
+  });
+
+  it("has a description", () => {
+    const tools = getRegisteredTools(server);
+    expect(tools["browser_scroll_to_text"].description).toBeTruthy();
+  });
+
+  it("scrolls to text and returns success message", async () => {
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Insights Table" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockScrollToText).toHaveBeenCalledWith(mockPage, "Insights Table", undefined);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Insights Table");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error when text is not found on page", async () => {
+    mockScrollToText.mockRejectedValueOnce(new Error('Text "Nonexistent Section" not found on page'));
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Nonexistent Section" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Nonexistent Section");
+    expect(result.content[0].text).toContain("not found");
+  });
+
+  it("returns error text when scrollToText throws (does not throw)", async () => {
+    mockScrollToText.mockRejectedValueOnce(new Error("Page context destroyed"));
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Some text" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Page context destroyed");
+  });
+
+  it("accepts optional timeout parameter", async () => {
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Footer", timeout: 5000 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockScrollToText).toHaveBeenCalledWith(mockPage, "Footer", 5000);
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("Footer");
   });
 });

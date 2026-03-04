@@ -29,6 +29,7 @@ import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from 
 import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs, resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
+import { scrollToText } from "../util/scroll-to-text.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
@@ -324,31 +325,7 @@ export class FlowRunner {
         break;
 
       case "scroll_to_text": {
-        const searchText = step.text.toLowerCase();
-        const found = await page.evaluate(
-          (text: string) => {
-            // Walk all text nodes looking for a case-insensitive partial match
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-            let node: Node | null;
-            while ((node = walker.nextNode())) {
-              const content = node.textContent ?? "";
-              if (content.toLowerCase().includes(text)) {
-                const el = node.parentElement;
-                if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "center" });
-                  return true;
-                }
-              }
-            }
-            return false;
-          },
-          searchText,
-        );
-        if (!found) {
-          throw new Error(`Text "${step.text}" not found on page`);
-        }
-        // Brief settle time for smooth scroll to complete
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await scrollToText(page, step.text, step.timeout);
         break;
       }
 
