@@ -90,12 +90,17 @@ describe("transcodeMp4ToH264", () => {
     expect(mockExecFile).toHaveBeenCalledTimes(1);
     const args = mockExecFile.mock.calls[0][1] as string[];
 
-    expect(args).toContain("-c:v");
-    expect(args).toContain("libx264");
-    expect(args).toContain("-pix_fmt");
-    expect(args).toContain("yuv420p");
-    expect(args).toContain("-movflags");
-    expect(args).toContain("+faststart");
+    const iCv = args.indexOf("-c:v");
+    expect(iCv).toBeGreaterThanOrEqual(0);
+    expect(args[iCv + 1]).toBe("libx264");
+
+    const iPixFmt = args.indexOf("-pix_fmt");
+    expect(iPixFmt).toBeGreaterThanOrEqual(0);
+    expect(args[iPixFmt + 1]).toBe("yuv420p");
+
+    const iMovflags = args.indexOf("-movflags");
+    expect(iMovflags).toBeGreaterThanOrEqual(0);
+    expect(args[iMovflags + 1]).toBe("+faststart");
   });
 
   it("passes input file as -i argument and temp file as output", async () => {
@@ -126,12 +131,18 @@ describe("transcodeMp4ToH264", () => {
 
     const args = mockExecFile.mock.calls[0][1] as string[];
 
-    expect(args).toContain("-preset");
-    expect(args).toContain("fast");
-    expect(args).toContain("-crf");
-    expect(args).toContain("23");
-    expect(args).toContain("-c:a");
-    expect(args).toContain("aac");
+    const iPreset = args.indexOf("-preset");
+    expect(iPreset).toBeGreaterThanOrEqual(0);
+    expect(args[iPreset + 1]).toBe("fast");
+
+    const iCrf = args.indexOf("-crf");
+    expect(iCrf).toBeGreaterThanOrEqual(0);
+    expect(args[iCrf + 1]).toBe("23");
+
+    const iCa = args.indexOf("-c:a");
+    expect(iCa).toBeGreaterThanOrEqual(0);
+    expect(args[iCa + 1]).toBe("aac");
+
     expect(args).toContain("-y");
   });
 
@@ -182,5 +193,20 @@ describe("transcodeMp4ToH264", () => {
     await expect(transcodeMp4ToH264("/tmp/recording.mp4")).rejects.toThrow(
       /Unknown encoder 'libx265'/,
     );
+  });
+
+  it("still throws ffmpeg error when unlink also fails", async () => {
+    execFileFails("codec not found");
+    mockUnlink.mockRejectedValue(new Error("ENOENT: no such file"));
+
+    await expect(transcodeMp4ToH264("/tmp/recording.mp4")).rejects.toThrow(
+      /codec not found/,
+    );
+  });
+
+  it("returns input path unchanged for non-.mp4 extensions", async () => {
+    const result = await transcodeMp4ToH264("/tmp/recording.avi");
+    expect(result).toBe("/tmp/recording.avi");
+    expect(mockExecFile).not.toHaveBeenCalled();
   });
 });
