@@ -295,6 +295,44 @@ describe("FlowValidator", () => {
       expect(report.valid).toBe(true);
       expect(report.steps[0].status).toBe("ok");
     });
+
+    it("caches a11y snapshot across multiple match steps (PP-30)", async () => {
+      const flow: FlowDefinition = {
+        name: "multi-match-cached",
+        steps: [
+          { action: "click", match: { role: "button", name: "Save" } },
+          { action: "type", match: { role: "textbox", name: "Search" }, text: "query" },
+          { action: "hover", match: { role: "menuitem", name: "File" } },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      await validator.validate(flow);
+
+      // Snapshot should be taken exactly once, not once per match step
+      expect(mockPage.accessibility.snapshot).toHaveBeenCalledTimes(1);
+
+      // resolveMatch should be called once per match step
+      expect(mockResolveMatch).toHaveBeenCalledTimes(3);
+
+      // Each resolveMatch call should receive the cached snapshot
+      const cachedSnapshot = { role: "WebArea" };
+      expect(mockResolveMatch).toHaveBeenNthCalledWith(
+        1,
+        { role: "button", name: "Save" },
+        { snapshot: cachedSnapshot },
+      );
+      expect(mockResolveMatch).toHaveBeenNthCalledWith(
+        2,
+        { role: "textbox", name: "Search" },
+        { snapshot: cachedSnapshot },
+      );
+      expect(mockResolveMatch).toHaveBeenNthCalledWith(
+        3,
+        { role: "menuitem", name: "File" },
+        { snapshot: cachedSnapshot },
+      );
+    });
   });
 
   // ── Non-targetable steps (skip) ─────────────────────────────────────
