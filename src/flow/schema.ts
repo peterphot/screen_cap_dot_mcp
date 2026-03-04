@@ -193,8 +193,29 @@ export const MAX_CONDITIONAL_DEPTH = 3;
 /** Default timeout in ms for conditional visibility checks. */
 export const DEFAULT_VISIBILITY_TIMEOUT_MS = 2000;
 
+// ── Conditional step factory ─────────────────────────────────────────────
+
+function buildConditionalStep(
+  action: "if_visible" | "if_not_visible",
+  nestedStepSchema: z.ZodType,
+) {
+  return z.object({
+    action: z.literal(action),
+    selector: z.string().min(1).optional(),
+    ref: z.string().min(1).optional(),
+    match: MatchSelectorSchema.optional(),
+    timeout: z.number().nonnegative().finite().max(300_000).optional(),
+    label: z.string().optional(),
+    then: z.array(nestedStepSchema).max(500),
+    else: z.array(nestedStepSchema).max(500),
+  }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
+}
+
 // ── Discriminated union of all steps ─────────────────────────────────────
 
+// Returns z.ZodType (widest Zod base type) because recursive construction erases
+// the specific union type. FlowStep inferred type may be wide — schema validation
+// ensures correctness at runtime.
 /**
  * Build a FlowStepSchema that supports conditional branching up to the given depth.
  * Uses recursive construction (not z.lazy) so depth is statically bounded.
@@ -225,27 +246,8 @@ function buildFlowStepSchema(depth: number): z.ZodType {
   // Recursive step schema for nested then/else arrays
   const nestedStepSchema = buildFlowStepSchema(depth - 1);
 
-  const IfVisibleStep = z.object({
-    action: z.literal("if_visible"),
-    selector: z.string().min(1).optional(),
-    ref: z.string().min(1).optional(),
-    match: MatchSelectorSchema.optional(),
-    timeout: z.number().nonnegative().finite().max(300_000).optional(),
-    label: z.string().optional(),
-    then: z.array(nestedStepSchema).max(500),
-    else: z.array(nestedStepSchema).max(500),
-  }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
-
-  const IfNotVisibleStep = z.object({
-    action: z.literal("if_not_visible"),
-    selector: z.string().min(1).optional(),
-    ref: z.string().min(1).optional(),
-    match: MatchSelectorSchema.optional(),
-    timeout: z.number().nonnegative().finite().max(300_000).optional(),
-    label: z.string().optional(),
-    then: z.array(nestedStepSchema).max(500),
-    else: z.array(nestedStepSchema).max(500),
-  }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
+  const IfVisibleStep = buildConditionalStep("if_visible", nestedStepSchema);
+  const IfNotVisibleStep = buildConditionalStep("if_not_visible", nestedStepSchema);
 
   return z.union([...baseSteps, IfVisibleStep, IfNotVisibleStep]);
 }

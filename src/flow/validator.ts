@@ -93,6 +93,13 @@ export class FlowValidator {
     return { valid, steps: stepResults };
   }
 
+  // ── Type guard ────────────────────────────────────────────────────────
+
+  /** Type guard for conditional steps with then/else branches. */
+  private isConditionalStep(step: FlowStep): step is FlowStep & { then: FlowStep[]; else: FlowStep[] } {
+    return (step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step;
+  }
+
   // ── Recursive helpers ───────────────────────────────────────────────
 
   /**
@@ -103,9 +110,9 @@ export class FlowValidator {
       if ((step.action === "click" || step.action === "type" || step.action === "hover") && "match" in step) {
         return true;
       }
-      if ((step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step) {
-        const s = step as { then: FlowStep[]; else: FlowStep[] };
-        if (this.hasMatchStepsRecursive(s.then) || this.hasMatchStepsRecursive(s.else)) {
+      if (this.isConditionalStep(step)) {
+        if ("match" in step && (step as Record<string, unknown>).match) return true;
+        if (this.hasMatchStepsRecursive(step.then) || this.hasMatchStepsRecursive(step.else)) {
           return true;
         }
       }
@@ -131,10 +138,9 @@ export class FlowValidator {
       stepResults.push(result);
 
       // If this is a conditional step, recursively validate nested steps
-      if ((step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step) {
-        const s = step as { then: FlowStep[]; else: FlowStep[] };
-        await this.validateSteps(page, s.then, stepResults, timeout, cachedSnapshot);
-        await this.validateSteps(page, s.else, stepResults, timeout, cachedSnapshot);
+      if (this.isConditionalStep(step)) {
+        await this.validateSteps(page, step.then, stepResults, timeout, cachedSnapshot);
+        await this.validateSteps(page, step.else, stepResults, timeout, cachedSnapshot);
       }
     }
   }
@@ -155,7 +161,6 @@ export class FlowValidator {
     };
 
     // Targetable step (click, type, hover with selector/ref/match)
-    const s = step as Record<string, unknown>;
     if (
       (step.action === "click" || step.action === "type" || step.action === "hover") &&
       ("selector" in step || "ref" in step || "match" in step)
@@ -164,8 +169,11 @@ export class FlowValidator {
     }
 
     // Wait/selector step
-    if (step.action === "wait" && s.strategy === "selector" && typeof s.selector === "string") {
-      return this.validateSelectorTarget(page, s.selector as string, base, timeout);
+    if (step.action === "wait" && "strategy" in step && (step as Record<string, unknown>).strategy === "selector") {
+      const s = step as Record<string, unknown>;
+      if (typeof s.selector === "string") {
+        return this.validateSelectorTarget(page, s.selector, base, timeout);
+      }
     }
 
     // Everything else is skip (including if_visible, if_not_visible — their

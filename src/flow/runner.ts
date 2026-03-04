@@ -321,13 +321,26 @@ export class FlowRunner {
 
       case "if_visible":
       case "if_not_visible": {
-        const isVisible = await this.checkVisibility(page, step);
+        const isVisible = await this.checkVisibility(page, step, cachedSnapshot);
         const conditionMet = step.action === "if_visible" ? isVisible : !isVisible;
         const branch = conditionMet ? step.then : step.else;
 
-        // Recursively execute the chosen branch
-        for (const nestedStep of (branch as FlowStep[])) {
-          await this.executeStep(page, nestedStep, outputDir, stepIndex, cachedSnapshot);
+        // Cache a single snapshot for the branch if any nested steps use match
+        // SAFETY: Zod schema validates then/else as arrays of valid FlowStep objects
+        const branchSteps = branch as FlowStep[];
+        let branchSnapshot = cachedSnapshot;
+        if (!branchSnapshot) {
+          const hasMatch = branchSteps.some((s) => "match" in s && (s as Record<string, unknown>).match);
+          if (hasMatch) {
+            const snap = await page.accessibility.snapshot({ interestingOnly: false });
+            if (snap) branchSnapshot = snap as A11ySnapshotNode;
+          }
+        }
+
+        // Nested steps use fail-fast semantics: an error in a nested step
+        // propagates up and fails the entire conditional step.
+        for (const nestedStep of branchSteps) {
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot);
         }
         break;
       }
@@ -337,15 +350,15 @@ export class FlowRunner {
   // ── Conditional visibility check ────────────────────────────────────
 
   /**
-   * Check whether the condition target of an if_visible/if_not_visible step
-   * is currently visible. Uses a short timeout (default 2s) to avoid long waits.
-   *
-   * Supports selector, ref, and match conditions.
-   * Returns true if the element is visible/found, false otherwise.
+   * Check whether the condition target is "visible":
+   * - selector: uses waitForSelector with short timeout (actual DOM visibility check)
+   * - ref: checks if the ref is registered (does NOT verify current DOM visibility)
+   * - match: uses resolveMatch against a11y tree (actual a11y tree check)
    */
   private async checkVisibility(
     page: Page,
     step: { selector?: string; ref?: string; match?: { role?: string; name?: string; index?: number }; timeout?: number },
+    cachedSnapshot?: A11ySnapshotNode,
   ): Promise<boolean> {
     const timeout = step.timeout ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
 
@@ -365,7 +378,8 @@ export class FlowRunner {
 
     if (step.match) {
       try {
-        await resolveMatch(step.match);
+        const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
+        await resolveMatch(step.match, opts);
         return true;
       } catch {
         return false;
