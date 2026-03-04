@@ -22,6 +22,12 @@ import { filterTree, formatA11yTree } from "../util/a11y-formatter.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 import logger from "../util/logger.js";
 
+/** Result shape returned by MCP tool handlers. */
+type ToolResult = {
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }>;
+  isError?: boolean;
+};
+
 /**
  * Read the allowed screenshot save directory.
  * Read lazily so env var changes and test overrides take effect.
@@ -67,7 +73,7 @@ export function annotateTreeWithRefs(node: A11ySnapshotNode, depth = 0): void {
  */
 async function takeAnnotatedScreenshot(
   page: Page,
-): Promise<{ content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }>; isError?: boolean }> {
+): Promise<ToolResult> {
   // Get all refs and their bounding boxes
   const refMap = getAllRefs(); // Map<string, number> (ref -> backendNodeId)
   const backendNodeIds = [...refMap.values()];
