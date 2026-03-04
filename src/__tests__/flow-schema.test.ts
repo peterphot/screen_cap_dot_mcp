@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { FlowDefinitionSchema, FlowStepSchema, RecordingConfigSchema } from "../flow/schema.js";
+import { FlowDefinitionSchema, FlowStepSchema, RecordingConfigSchema, MAX_CONDITIONAL_DEPTH } from "../flow/schema.js";
 
 describe("FlowStepSchema", () => {
   it("validates a navigate step", () => {
@@ -624,6 +624,240 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // ── if_visible / if_not_visible steps ──────────────────────────────
+
+  it("validates an if_visible step with selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".cookie-banner",
+      then: [{ action: "click", selector: ".cookie-banner .dismiss" }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates an if_visible step with ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      ref: "e1",
+      then: [{ action: "click", ref: "e1" }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates an if_visible step with match", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      match: { role: "dialog", name: "Cookie Consent" },
+      then: [{ action: "click", match: { role: "button", name: "Accept" } }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates an if_not_visible step with selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_not_visible",
+      selector: ".content-loaded",
+      then: [{ action: "wait", strategy: "smart" }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates an if_visible step with optional timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".popup",
+      timeout: 5000,
+      then: [{ action: "click", selector: ".popup .close" }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates an if_visible step with optional label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".modal",
+      label: "check-modal",
+      then: [{ action: "click", selector: ".modal .ok" }],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects if_visible with both selector and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      ref: "e1",
+      then: [],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects if_visible with no condition target", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      then: [],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects if_visible without then array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects if_visible without else array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      then: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates nested conditional steps (depth 2)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".outer",
+      then: [
+        {
+          action: "if_visible",
+          selector: ".inner",
+          then: [{ action: "click", selector: ".inner .btn" }],
+          else: [],
+        },
+      ],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates nested conditional steps at max depth (depth 3)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".level1",
+      then: [
+        {
+          action: "if_visible",
+          selector: ".level2",
+          then: [
+            {
+              action: "if_visible",
+              selector: ".level3",
+              then: [{ action: "click", selector: ".level3 .btn" }],
+              else: [],
+            },
+          ],
+          else: [],
+        },
+      ],
+      else: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects nested conditional steps exceeding max depth (depth 4)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".level1",
+      then: [
+        {
+          action: "if_visible",
+          selector: ".level2",
+          then: [
+            {
+              action: "if_visible",
+              selector: ".level3",
+              then: [
+                {
+                  action: "if_visible",
+                  selector: ".level4",
+                  then: [{ action: "click", selector: ".level4 .btn" }],
+                  else: [],
+                },
+              ],
+              else: [],
+            },
+          ],
+          else: [],
+        },
+      ],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates if_visible with non-empty then and else arrays", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".promo",
+      then: [
+        { action: "click", selector: ".promo .cta" },
+        { action: "screenshot", label: "promo-visible" },
+      ],
+      else: [
+        { action: "screenshot", label: "promo-hidden" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects if_visible with invalid step in then array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      then: [{ action: "invalid_action" }],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects if_visible with invalid step in else array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      then: [],
+      else: [{ action: "invalid_action" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("exports MAX_CONDITIONAL_DEPTH constant equal to 3", () => {
+    expect(MAX_CONDITIONAL_DEPTH).toBe(3);
+  });
+
+  it("rejects if_visible with negative timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      selector: ".banner",
+      timeout: -1,
+      then: [],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates if_visible with empty match (no role or name) fails", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "if_visible",
+      match: {},
+      then: [],
+      else: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── hover_at step ──────────────────────────────────────────────────
 
   it("validates a hover_at step with x, y", () => {
@@ -768,6 +1002,43 @@ describe("FlowDefinitionSchema", () => {
         { action: "navigate", url: "https://example.com" },
         { action: "click", selector: ".modal-trigger" },
         { action: "press_key", key: "Escape", label: "close-modal" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a flow with if_visible conditional step", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "conditional-flow",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        {
+          action: "if_visible",
+          selector: ".cookie-banner",
+          then: [
+            { action: "click", selector: ".cookie-banner .dismiss" },
+          ],
+          else: [],
+        },
+        { action: "screenshot", label: "after-cookie-check" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a flow with if_not_visible conditional step", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "conditional-not-visible-flow",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        {
+          action: "if_not_visible",
+          selector: ".content-loaded",
+          then: [
+            { action: "wait", strategy: "smart" },
+          ],
+          else: [],
+        },
       ],
     });
     expect(result.success).toBe(true);

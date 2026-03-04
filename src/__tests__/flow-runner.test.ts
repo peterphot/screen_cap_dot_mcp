@@ -1214,6 +1214,327 @@ describe("match-based steps", () => {
     expect(result.steps[1].success).toBe(true);
   });
 
+  it("executes if_visible then branch when selector is visible", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "if-visible-then",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".cookie-banner",
+          then: [{ action: "click", selector: ".cookie-banner .dismiss" }],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("if_visible");
+    // The click inside `then` should have been called
+    expect(mockPage.click).toHaveBeenCalledWith(".cookie-banner .dismiss");
+  });
+
+  it("executes if_visible else branch when selector is NOT visible", async () => {
+    // First call: visibility check fails (not visible)
+    mockPage.waitForSelector.mockRejectedValueOnce(new Error("Timeout"));
+    // Second call: the navigate step doesn't use waitForSelector
+
+    const flow: FlowDefinition = {
+      name: "if-visible-else",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".cookie-banner",
+          then: [{ action: "click", selector: ".cookie-banner .dismiss" }],
+          else: [{ action: "navigate", url: "https://example.com" }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("if_visible");
+    // The click in `then` should NOT have been called
+    expect(mockPage.click).not.toHaveBeenCalled();
+    // The navigate in `else` should have been called
+    expect(mockPage.goto).toHaveBeenCalled();
+  });
+
+  it("executes if_not_visible then branch when selector is NOT visible", async () => {
+    // Visibility check fails => not visible => if_not_visible condition is true
+    mockPage.waitForSelector.mockRejectedValueOnce(new Error("Timeout"));
+
+    const flow: FlowDefinition = {
+      name: "if-not-visible-then",
+      steps: [
+        {
+          action: "if_not_visible",
+          selector: ".content-loaded",
+          then: [{ action: "navigate", url: "https://example.com/wait" }],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.goto).toHaveBeenCalled();
+  });
+
+  it("executes if_not_visible else branch when selector IS visible", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "if-not-visible-else",
+      steps: [
+        {
+          action: "if_not_visible",
+          selector: ".content-loaded",
+          then: [{ action: "navigate", url: "https://example.com/wait" }],
+          else: [{ action: "screenshot", label: "content-loaded" }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    // navigate in then should NOT be called
+    expect(mockPage.goto).not.toHaveBeenCalled();
+    // screenshot in else should be called
+    const screenshotWrite = mockSafeWriteFile.mock.calls.find(
+      (call: unknown[]) => (call[0] as string).includes("content-loaded.png"),
+    );
+    expect(screenshotWrite).toBeDefined();
+  });
+
+  it("uses default 2s timeout for if_visible visibility check", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "if-visible-default-timeout",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          then: [],
+          else: [],
+        },
+      ],
+    };
+
+    await runner.run(flow);
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".banner", {
+      visible: true,
+      timeout: 2000,
+    });
+  });
+
+  it("uses custom timeout for if_visible visibility check", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "if-visible-custom-timeout",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          timeout: 5000,
+          then: [],
+          else: [],
+        },
+      ],
+    };
+
+    await runner.run(flow);
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".banner", {
+      visible: true,
+      timeout: 5000,
+    });
+  });
+
+  it("handles if_visible with ref condition", async () => {
+    mockResolveRef.mockReturnValue(42);
+
+    const flow: FlowDefinition = {
+      name: "if-visible-ref",
+      steps: [
+        {
+          action: "if_visible",
+          ref: "e1",
+          then: [{ action: "click", ref: "e1" }],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(42);
+  });
+
+  it("handles if_visible with ref condition when ref is stale", async () => {
+    mockResolveRef.mockReturnValue(undefined);
+
+    const flow: FlowDefinition = {
+      name: "if-visible-ref-stale",
+      steps: [
+        {
+          action: "if_visible",
+          ref: "e99",
+          then: [{ action: "click", selector: ".fallback" }],
+          else: [{ action: "navigate", url: "https://example.com" }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    // Stale ref means not visible => else branch
+    expect(mockPage.click).not.toHaveBeenCalled();
+    expect(mockPage.goto).toHaveBeenCalled();
+  });
+
+  it("handles if_visible with match condition", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "if-visible-match",
+      steps: [
+        {
+          action: "if_visible",
+          match: { role: "dialog", name: "Cookie Consent" },
+          then: [{ action: "click", match: { role: "button", name: "Accept" } }],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100);
+  });
+
+  it("handles if_visible with match condition when no match found", async () => {
+    // First resolveMatch call (condition check) fails
+    mockResolveMatch.mockRejectedValueOnce(new Error("No match found"));
+
+    const flow: FlowDefinition = {
+      name: "if-visible-match-missing",
+      steps: [
+        {
+          action: "if_visible",
+          match: { role: "dialog" },
+          then: [],
+          else: [{ action: "navigate", url: "https://example.com" }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.goto).toHaveBeenCalled();
+  });
+
+  it("captures artifacts from nested steps normally", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "if-visible-artifacts",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          then: [
+            { action: "navigate", url: "https://example.com", label: "nav-inside-if" },
+          ],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+  });
+
+  it("continues flow after conditional step failure in nested steps", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+    mockPage.goto.mockRejectedValueOnce(new Error("Navigation failed"));
+
+    const flow: FlowDefinition = {
+      name: "if-visible-nested-fail",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          then: [
+            { action: "navigate", url: "https://bad.example.com" },
+          ],
+          else: [],
+        },
+        { action: "navigate", url: "https://good.example.com" },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    // The if_visible step itself should report failure since a nested step failed
+    expect(result.steps[0].success).toBe(false);
+    // The second step should still execute (continue on error)
+    expect(result.steps[1].success).toBe(true);
+  });
+
+  it("executes nested conditionals (depth 2)", async () => {
+    // First visibility check: outer passes
+    mockPage.waitForSelector
+      .mockResolvedValueOnce({})   // outer if_visible check
+      .mockResolvedValueOnce({})   // inner if_visible check
+      .mockResolvedValueOnce({});  // waitForSelector for click
+
+    const flow: FlowDefinition = {
+      name: "nested-conditionals",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".outer",
+          then: [
+            {
+              action: "if_visible",
+              selector: ".inner",
+              then: [{ action: "click", selector: ".inner .btn" }],
+              else: [],
+            },
+          ],
+          else: [],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.click).toHaveBeenCalledWith(".inner .btn");
+  });
+
   it("takes only 1 a11y snapshot when step has both match and label", async () => {
     const fakeSnapshot = { role: "WebArea", name: "Test" };
     mockPage.accessibility.snapshot.mockResolvedValue(fakeSnapshot);

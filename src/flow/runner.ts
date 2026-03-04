@@ -22,11 +22,12 @@ import { ensurePage, DEFAULT_TIMEOUT_MS } from "../browser.js";
 import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
+import { DEFAULT_VISIBILITY_TIMEOUT_MS } from "./schema.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
-import { clearRefs } from "../ref-store.js";
+import { clearRefs, resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
@@ -317,7 +318,62 @@ export class FlowRunner {
       case "sleep":
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
+
+      case "if_visible":
+      case "if_not_visible": {
+        const isVisible = await this.checkVisibility(page, step);
+        const conditionMet = step.action === "if_visible" ? isVisible : !isVisible;
+        const branch = conditionMet ? step.then : step.else;
+
+        // Recursively execute the chosen branch
+        for (const nestedStep of (branch as FlowStep[])) {
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, cachedSnapshot);
+        }
+        break;
+      }
     }
+  }
+
+  // ── Conditional visibility check ────────────────────────────────────
+
+  /**
+   * Check whether the condition target of an if_visible/if_not_visible step
+   * is currently visible. Uses a short timeout (default 2s) to avoid long waits.
+   *
+   * Supports selector, ref, and match conditions.
+   * Returns true if the element is visible/found, false otherwise.
+   */
+  private async checkVisibility(
+    page: Page,
+    step: { selector?: string; ref?: string; match?: { role?: string; name?: string; index?: number }; timeout?: number },
+  ): Promise<boolean> {
+    const timeout = step.timeout ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
+
+    if (step.selector) {
+      try {
+        await page.waitForSelector(step.selector, { visible: true, timeout });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    if (step.ref) {
+      const backendNodeId = resolveRef(step.ref);
+      return backendNodeId !== undefined;
+    }
+
+    if (step.match) {
+      try {
+        await resolveMatch(step.match);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Should not happen with validated schema
+    return false;
   }
 
   private async executeWait(

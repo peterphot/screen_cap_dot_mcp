@@ -12,6 +12,9 @@
  *   Validated via resolveRef returning a valid backendNodeId.
  * - Match steps (click, type, hover with `match`):
  *   Validated via resolveMatch from a11y-matcher.
+ * - Conditional steps (if_visible, if_not_visible):
+ *   The condition itself is marked as "skip" (checked at runtime).
+ *   Nested steps in `then` and `else` branches are validated recursively.
  * - Non-targetable steps (navigate, scroll, sleep, screenshot, evaluate,
  *   a11y_snapshot, click_at, hover_at, press_key, wait/smart,
  *   wait/network_idle, wait/delay, wait/function):
@@ -63,10 +66,8 @@ export class FlowValidator {
     const page = await ensurePage();
     const stepResults: ValidationStepResult[] = [];
 
-    // Cache a single a11y snapshot if any match steps exist
-    const hasMatchSteps = flow.steps.some(
-      (s) => (s.action === "click" || s.action === "type" || s.action === "hover") && "match" in s,
-    );
+    // Cache a single a11y snapshot if any match steps exist (including nested)
+    const hasMatchSteps = this.hasMatchStepsRecursive(flow.steps);
     let cachedSnapshot: A11ySnapshotNode | undefined;
     if (hasMatchSteps) {
       const raw = await page.accessibility.snapshot({ interestingOnly: false });
@@ -75,11 +76,7 @@ export class FlowValidator {
       }
     }
 
-    for (let i = 0; i < flow.steps.length; i++) {
-      const step = flow.steps[i];
-      const result = await this.validateStep(page, step, i, timeout, cachedSnapshot);
-      stepResults.push(result);
-    }
+    await this.validateSteps(page, flow.steps, stepResults, timeout, cachedSnapshot);
 
     const valid = stepResults.every((s) => s.status !== "missing");
 
@@ -94,6 +91,52 @@ export class FlowValidator {
     );
 
     return { valid, steps: stepResults };
+  }
+
+  // ── Recursive helpers ───────────────────────────────────────────────
+
+  /**
+   * Check whether any steps (including nested conditional branches) use match targeting.
+   */
+  private hasMatchStepsRecursive(steps: FlowStep[]): boolean {
+    for (const step of steps) {
+      if ((step.action === "click" || step.action === "type" || step.action === "hover") && "match" in step) {
+        return true;
+      }
+      if ((step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step) {
+        const s = step as { then: FlowStep[]; else: FlowStep[] };
+        if (this.hasMatchStepsRecursive(s.then) || this.hasMatchStepsRecursive(s.else)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Validate an array of steps, appending results to stepResults.
+   * Handles conditional steps by recursively validating nested branches.
+   */
+  private async validateSteps(
+    page: { waitForSelector: (selector: string, opts: { timeout: number }) => Promise<unknown> },
+    steps: FlowStep[],
+    stepResults: ValidationStepResult[],
+    timeout: number,
+    cachedSnapshot?: A11ySnapshotNode,
+  ): Promise<void> {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const globalIndex = stepResults.length;
+      const result = await this.validateStep(page, step, globalIndex, timeout, cachedSnapshot);
+      stepResults.push(result);
+
+      // If this is a conditional step, recursively validate nested steps
+      if ((step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step) {
+        const s = step as { then: FlowStep[]; else: FlowStep[] };
+        await this.validateSteps(page, s.then, stepResults, timeout, cachedSnapshot);
+        await this.validateSteps(page, s.else, stepResults, timeout, cachedSnapshot);
+      }
+    }
   }
 
   // ── Step validation ─────────────────────────────────────────────────
@@ -111,27 +154,23 @@ export class FlowValidator {
       label: step.label,
     };
 
-    // Check if this is a targetable step (click, type, hover with selector/ref/match)
-    if (this.isTargetableStep(step)) {
+    // Targetable step (click, type, hover with selector/ref/match)
+    const s = step as Record<string, unknown>;
+    if (
+      (step.action === "click" || step.action === "type" || step.action === "hover") &&
+      ("selector" in step || "ref" in step || "match" in step)
+    ) {
       return this.validateTargetableStep(page, step, base, timeout, cachedSnapshot);
     }
 
-    // Check if this is a wait/selector step
-    if (step.action === "wait" && "strategy" in step && step.strategy === "selector") {
-      return this.validateSelectorTarget(page, step.selector, base, timeout);
+    // Wait/selector step
+    if (step.action === "wait" && s.strategy === "selector" && typeof s.selector === "string") {
+      return this.validateSelectorTarget(page, s.selector as string, base, timeout);
     }
 
-    // Everything else is skip
+    // Everything else is skip (including if_visible, if_not_visible — their
+    // nested branches are validated separately by validateSteps)
     return { ...base, status: "skip" };
-  }
-
-  private isTargetableStep(
-    step: FlowStep,
-  ): step is Extract<FlowStep, { action: "click" | "type" | "hover" }> {
-    return (
-      (step.action === "click" || step.action === "type" || step.action === "hover") &&
-      ("selector" in step || "ref" in step || "match" in step)
-    );
   }
 
   private async validateTargetableStep(
