@@ -39,9 +39,11 @@ vi.mock("../ref-store.js", () => ({
 
 // Mock the cdp-helpers module (used by annotated screenshot)
 const mockBatchGetBoundingBoxes = vi.fn();
+const mockGetBatchLimit = vi.fn();
 
 vi.mock("../cdp-helpers.js", () => ({
   batchGetBoundingBoxes: (...args: unknown[]) => mockBatchGetBoundingBoxes(...args),
+  getBatchLimit: (...args: unknown[]) => mockGetBatchLimit(...args),
 }));
 
 // Mock node:fs/promises for non-savePath tests (e.g. writeFile used by a11y, etc.)
@@ -195,6 +197,7 @@ beforeEach(async () => {
   mockHasRefs.mockReturnValue(false);
   mockGetAllRefs.mockReturnValue(new Map());
   mockBatchGetBoundingBoxes.mockResolvedValue(new Map());
+  mockGetBatchLimit.mockReturnValue(1000);
 
   // Create a fresh server and register tools for each test
   server = new McpServer({ name: "test-server", version: "1.0.0" });
@@ -560,6 +563,132 @@ describe("browser_screenshot", () => {
       // CDP session should NOT have been used for overlay operations
       expect(mockEnsureCDPSession).not.toHaveBeenCalled();
     });
+
+    it("filters refs by role priority when count exceeds batch limit", async () => {
+      // Simulate a low batch limit (5) so we can test filtering without 1000+ entries
+      mockGetBatchLimit.mockReturnValue(5);
+      mockHasRefs.mockReturnValue(true);
+
+      // Create 8 refs: 3 buttons (high priority), 2 links (high priority), 3 cells (low priority)
+      const refMap = new Map<string, number>();
+      const { setRefRole } = await import("../tools/observation.js");
+      // Clear any stale role data from prior tests
+      const { clearRefRoles } = await import("../tools/observation.js");
+      clearRefRoles();
+
+      // Buttons (high priority)
+      refMap.set("e1", 101); setRefRole("e1", "button");
+      refMap.set("e2", 102); setRefRole("e2", "button");
+      refMap.set("e3", 103); setRefRole("e3", "button");
+      // Links (high priority)
+      refMap.set("e4", 104); setRefRole("e4", "link");
+      refMap.set("e5", 105); setRefRole("e5", "link");
+      // Cells (low priority)
+      refMap.set("e6", 106); setRefRole("e6", "cell");
+      refMap.set("e7", 107); setRefRole("e7", "gridcell");
+      refMap.set("e8", 108); setRefRole("e8", "StaticText");
+
+      mockGetAllRefs.mockReturnValue(refMap);
+
+      // All elements visible
+      const bboxMap = new Map<number, { x: number; y: number; width: number; height: number } | null>();
+      for (const [, nodeId] of refMap) {
+        bboxMap.set(nodeId, { x: 10, y: 10, width: 50, height: 20 });
+      }
+      mockBatchGetBoundingBoxes.mockResolvedValue(bboxMap);
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should pass only 5 backendNodeIds to batchGetBoundingBoxes (not 8)
+      const batchCallArgs = mockBatchGetBoundingBoxes.mock.calls[0][0] as number[];
+      expect(batchCallArgs.length).toBe(5);
+
+      // The 5 should be the high-priority elements (buttons and links)
+      // Buttons: 101, 102, 103; Links: 104, 105
+      expect(batchCallArgs).toContain(101); // button
+      expect(batchCallArgs).toContain(102); // button
+      expect(batchCallArgs).toContain(103); // button
+      expect(batchCallArgs).toContain(104); // link
+      expect(batchCallArgs).toContain(105); // link
+
+      // Low-priority cells should be excluded
+      expect(batchCallArgs).not.toContain(106); // cell
+      expect(batchCallArgs).not.toContain(107); // gridcell
+      expect(batchCallArgs).not.toContain(108); // StaticText
+
+      // Should include a text note about filtering
+      const textContent = result.content.find((c: { type: string }) => c.type === "text");
+      expect(textContent).toBeTruthy();
+      expect(textContent.text).toContain("5");  // annotated count
+      expect(textContent.text).toContain("8");  // total count
+    });
+
+    it("does not filter when ref count is within batch limit", async () => {
+      mockGetBatchLimit.mockReturnValue(1000);
+      mockHasRefs.mockReturnValue(true);
+
+      // Only 3 refs -- well within the 1000 limit
+      mockGetAllRefs.mockReturnValue(new Map([
+        ["e1", 10],
+        ["e2", 20],
+        ["e3", 30],
+      ]));
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [10, { x: 100, y: 200, width: 80, height: 30 }],
+        [20, { x: 200, y: 200, width: 80, height: 30 }],
+        [30, { x: 300, y: 200, width: 80, height: 30 }],
+      ]));
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // All 3 should be passed to batchGetBoundingBoxes
+      const batchCallArgs = mockBatchGetBoundingBoxes.mock.calls[0][0] as number[];
+      expect(batchCallArgs.length).toBe(3);
+      // No filtering note in output (only image, no text)
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe("image");
+    });
+
+    it("includes filtering count note when elements are filtered", async () => {
+      mockGetBatchLimit.mockReturnValue(2);
+      mockHasRefs.mockReturnValue(true);
+
+      const { setRefRole, clearRefRoles } = await import("../tools/observation.js");
+      clearRefRoles();
+
+      const refMap = new Map<string, number>();
+      refMap.set("e1", 101); setRefRole("e1", "button");
+      refMap.set("e2", 102); setRefRole("e2", "link");
+      refMap.set("e3", 103); setRefRole("e3", "cell");
+
+      mockGetAllRefs.mockReturnValue(refMap);
+      mockBatchGetBoundingBoxes.mockResolvedValue(new Map([
+        [101, { x: 10, y: 10, width: 50, height: 20 }],
+        [102, { x: 60, y: 10, width: 50, height: 20 }],
+      ]));
+
+      const handler = getToolHandler(server, "browser_screenshot");
+      const result = await handler(
+        { annotate: true },
+        { signal: new AbortController().signal },
+      );
+
+      // Should have image + text note
+      const imageContent = result.content.find((c: { type: string }) => c.type === "image");
+      const textContent = result.content.find((c: { type: string }) => c.type === "text");
+      expect(imageContent).toBeTruthy();
+      expect(textContent).toBeTruthy();
+      // Note should mention annotated count and total count
+      expect(textContent.text).toMatch(/2.*3|annotated.*2.*of.*3/i);
+    });
   });
 
   describe("annotate: false / omitted (no regression)", () => {
@@ -917,6 +1046,133 @@ describe("annotateTreeWithRefs", () => {
 
     expect(tree).not.toHaveProperty("ref");
     expect(mockAllocateRef).not.toHaveBeenCalled();
+  });
+
+  it("populates refRoles map with role for each annotated node", async () => {
+    const { annotateTreeWithRefs, getRefRoles, clearRefRoles } = await import("../tools/observation.js");
+    clearRefRoles();
+
+    // Mock allocateRef to return predictable ref IDs
+    let counter = 0;
+    mockAllocateRef.mockImplementation(() => {
+      counter += 1;
+      return `e${counter}`;
+    });
+
+    const tree = {
+      role: "RootWebArea",
+      name: "App",
+      backendNodeId: 10,
+      children: [
+        { role: "button", name: "Submit", backendNodeId: 20 },
+        { role: "link", name: "Home", backendNodeId: 30 },
+      ],
+    };
+
+    annotateTreeWithRefs(tree);
+
+    const roles = getRefRoles();
+    expect(roles.get("e1")).toBe("RootWebArea");
+    expect(roles.get("e2")).toBe("button");
+    expect(roles.get("e3")).toBe("link");
+  });
+});
+
+// ── filterRefsByPriority (exported helper) ──────────────────────────────
+
+describe("filterRefsByPriority", () => {
+  it("returns all refs unchanged when count is within limit", async () => {
+    const { filterRefsByPriority } = await import("../tools/observation.js");
+
+    const refMap = new Map([["e1", 10], ["e2", 20], ["e3", 30]]);
+    const roles = new Map([["e1", "button"], ["e2", "link"], ["e3", "cell"]]);
+
+    const result = filterRefsByPriority(refMap, roles, 10);
+
+    expect(result.filtered.size).toBe(3);
+    expect(result.totalCount).toBe(3);
+    expect(result.wasFiltered).toBe(false);
+  });
+
+  it("prioritizes interactive roles over static roles", async () => {
+    const { filterRefsByPriority } = await import("../tools/observation.js");
+
+    const refMap = new Map<string, number>([
+      ["e1", 101], // button (high priority)
+      ["e2", 102], // cell (low priority)
+      ["e3", 103], // link (high priority)
+      ["e4", 104], // StaticText (low priority)
+      ["e5", 105], // combobox (high priority)
+    ]);
+    const roles = new Map([
+      ["e1", "button"],
+      ["e2", "cell"],
+      ["e3", "link"],
+      ["e4", "StaticText"],
+      ["e5", "combobox"],
+    ]);
+
+    const result = filterRefsByPriority(refMap, roles, 3);
+
+    expect(result.filtered.size).toBe(3);
+    expect(result.wasFiltered).toBe(true);
+    expect(result.totalCount).toBe(5);
+
+    // Should contain the high-priority refs
+    const filteredRefs = [...result.filtered.keys()];
+    expect(filteredRefs).toContain("e1"); // button
+    expect(filteredRefs).toContain("e3"); // link
+    expect(filteredRefs).toContain("e5"); // combobox
+
+    // Should NOT contain low-priority refs
+    expect(filteredRefs).not.toContain("e2"); // cell
+    expect(filteredRefs).not.toContain("e4"); // StaticText
+  });
+
+  it("uses default low priority for refs without role data", async () => {
+    const { filterRefsByPriority } = await import("../tools/observation.js");
+
+    const refMap = new Map<string, number>([
+      ["e1", 101], // button
+      ["e2", 102], // no role data (should get low priority)
+      ["e3", 103], // link
+    ]);
+    const roles = new Map([
+      ["e1", "button"],
+      ["e3", "link"],
+    ]);
+
+    const result = filterRefsByPriority(refMap, roles, 2);
+
+    expect(result.filtered.size).toBe(2);
+    expect(result.wasFiltered).toBe(true);
+
+    const filteredRefs = [...result.filtered.keys()];
+    expect(filteredRefs).toContain("e1"); // button
+    expect(filteredRefs).toContain("e3"); // link
+    expect(filteredRefs).not.toContain("e2"); // no role -> low priority
+  });
+
+  it("handles empty ref map", async () => {
+    const { filterRefsByPriority } = await import("../tools/observation.js");
+
+    const result = filterRefsByPriority(new Map(), new Map(), 100);
+
+    expect(result.filtered.size).toBe(0);
+    expect(result.totalCount).toBe(0);
+    expect(result.wasFiltered).toBe(false);
+  });
+
+  it("handles limit of exactly the ref count (no filtering)", async () => {
+    const { filterRefsByPriority } = await import("../tools/observation.js");
+
+    const refMap = new Map<string, number>([["e1", 10], ["e2", 20]]);
+    const roles = new Map([["e1", "button"], ["e2", "cell"]]);
+
+    const result = filterRefsByPriority(refMap, roles, 2);
+
+    expect(result.filtered.size).toBe(2);
+    expect(result.wasFiltered).toBe(false);
   });
 });
 

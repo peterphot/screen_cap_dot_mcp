@@ -1,18 +1,14 @@
 {
-  "feature": "pp-28-semantic-flow-selectors",
+  "feature": "pp-29-annotated-screenshot-batch-limit",
   "tickets": {
     "enabled": false,
-    "type": null,
-    "team": null,
-    "sourceTicket": "PP-28",
+    "type": "local",
+    "team": "Engineering",
+    "sourceTicket": "PP-29",
     "mapping": {}
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Test: a11y-matcher matching logic" },
-    "T002": { "status": "complete", "description": "Implement: a11y-matcher.ts" },
-    "T003": { "status": "complete", "description": "Test: match selector schema validation" },
-    "T004": { "status": "complete", "description": "Implement: schema.ts match selector changes" },
-    "T005": { "status": "complete", "description": "Test: flow runner match-based step execution" },
-    "T006": { "status": "complete", "description": "Implement: runner.ts match resolution" }
+    "T001": { "status": "complete", "description": "Raise batchGetBoundingBoxes limit from 500 to 1000 + tests" },
+    "T002": { "status": "complete", "description": "Add priority filtering in takeAnnotatedScreenshot + filtering count note + tests" }
   }
 }

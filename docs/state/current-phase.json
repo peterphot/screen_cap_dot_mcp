@@ -1,9 +1,9 @@
 {
-  "feature": "pp-28-semantic-flow-selectors",
+  "feature": "pp-29-annotated-screenshot-batch-limit",
   "phase": "BUILD_COMPLETE",
   "currentTask": null,
   "status": "complete",
-  "lastUpdated": "2026-03-04T10:20:00Z",
+  "lastUpdated": "2026-03-04T18:40:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-28"
+  "sourceTicket": "PP-29"
 }
