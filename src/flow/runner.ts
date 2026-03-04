@@ -136,7 +136,7 @@ export class FlowRunner {
     let stepsToExecute = flow.steps;
     if (section) {
       const groupStep = flow.steps.find(
-        (s) => s.action === "group" && "name" in s && (s as Record<string, unknown>).name === section,
+        (s) => s.action === "group" && "name" in s && (s as { name: string }).name === section,
       );
       if (!groupStep) {
         throw new Error(`Section "${section}" not found in flow "${flow.name}".`);
@@ -368,6 +368,7 @@ export class FlowRunner {
 
       case "group": {
         logger.info(`Group "${step.name}" started`);
+        // Zod schema guarantees step.steps is FlowStep[] when action === "group"
         const groupSteps = step.steps as FlowStep[];
         let groupSnapshot = cachedSnapshot;
         if (!groupSnapshot) {
