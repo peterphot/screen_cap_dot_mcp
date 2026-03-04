@@ -995,7 +995,7 @@ describe("press_key steps", () => {
   it("executes press_key step by calling page.keyboard.press", async () => {
     const flow: FlowDefinition = {
       name: "press-key-test",
-      steps: [{ action: "press_key" as const, key: "Escape" }],
+      steps: [{ action: "press_key", key: "Escape" }],
     };
 
     const result = await runner.run(flow);
@@ -1008,7 +1008,7 @@ describe("press_key steps", () => {
   it("executes press_key step with Enter key", async () => {
     const flow: FlowDefinition = {
       name: "press-enter",
-      steps: [{ action: "press_key" as const, key: "Enter" }],
+      steps: [{ action: "press_key", key: "Enter" }],
     };
 
     const result = await runner.run(flow);
@@ -1020,7 +1020,7 @@ describe("press_key steps", () => {
   it("executes press_key step with modifier combination", async () => {
     const flow: FlowDefinition = {
       name: "press-ctrl-a",
-      steps: [{ action: "press_key" as const, key: "Control+a" }],
+      steps: [{ action: "press_key", key: "Control+a" }],
     };
 
     const result = await runner.run(flow);
@@ -1034,7 +1034,7 @@ describe("press_key steps", () => {
 
     const flow: FlowDefinition = {
       name: "press-key-fail",
-      steps: [{ action: "press_key" as const, key: "BadKey" }],
+      steps: [{ action: "press_key", key: "BadKey" }],
     };
 
     const result = await runner.run(flow);
@@ -1046,7 +1046,7 @@ describe("press_key steps", () => {
   it("captures artifacts for labeled press_key step", async () => {
     const flow: FlowDefinition = {
       name: "press-key-labeled",
-      steps: [{ action: "press_key" as const, key: "Escape", label: "close-modal" }],
+      steps: [{ action: "press_key", key: "Escape", label: "close-modal" }],
     };
 
     const result = await runner.run(flow);
@@ -1062,7 +1062,7 @@ describe("press_key steps", () => {
     const flow: FlowDefinition = {
       name: "press-key-continue",
       steps: [
-        { action: "press_key" as const, key: "BadKey" },
+        { action: "press_key", key: "BadKey" },
         { action: "navigate", url: "https://example.com" },
       ],
     };

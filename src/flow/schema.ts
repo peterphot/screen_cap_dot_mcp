@@ -16,6 +16,12 @@
 
 import { z } from "zod";
 
+// ── Shared key format constants ─────────────────────────────────────────
+
+/** Regex for validating keyboard key strings (e.g. "Enter", "Control+a"). */
+export const KEY_FORMAT_PATTERN = /^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/;
+export const KEY_FORMAT_MESSAGE = "Invalid key format. Use key names like 'Enter', 'Tab', or modifier combos like 'Control+a'.";
+
 // ── Match selector schema ───────────────────────────────────────────────
 
 /**
@@ -96,7 +102,7 @@ const HoverAtStep = z.object({
 
 const PressKeyStep = z.object({
   action: z.literal("press_key"),
-  key: z.string().min(1).regex(/^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/, "Invalid key format. Use key names like 'Enter', 'Tab', or modifier combos like 'Control+a'."),
+  key: z.string().min(1).max(100).regex(KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE),
   label: z.string().optional(),
 });
 

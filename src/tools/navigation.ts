@@ -33,6 +33,7 @@ import { clearRefs } from "../ref-store.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
+import { KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE } from "../flow/schema.js";
 import logger from "../util/logger.js";
 
 /**
@@ -235,7 +236,7 @@ export function registerNavigationTools(server: McpServer): void {
     "browser_press_key",
     "Dispatch a keyboard event. Supports common keys (Escape, Tab, Enter, ArrowDown, ArrowUp, ArrowLeft, ArrowRight) and modifier combinations (e.g. \"Control+a\" for select-all).",
     {
-      key: z.string().regex(/^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/).describe("Key to press (e.g. 'Escape', 'Tab', 'Enter', 'ArrowDown', 'Control+a')"),
+      key: z.string().max(100).regex(KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE).describe("Key to press (e.g. 'Escape', 'Tab', 'Enter', 'ArrowDown', 'Control+a')"),
     },
     async ({ key }) => {
       try {
