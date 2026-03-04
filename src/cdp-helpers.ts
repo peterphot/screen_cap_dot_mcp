@@ -2,8 +2,8 @@
  * CDP Helpers - Chrome DevTools Protocol interaction primitives.
  *
  * Uses ensureCDPSession() from browser.ts to make direct CDP calls for
- * element interaction by backendNodeId. These are low-level building blocks
- * for click, type, and hover operations.
+ * element interaction by backendNodeId or absolute viewport coordinates.
+ * These are low-level building blocks for click, type, and hover operations.
  *
  * Key design decisions:
  * - All functions take a backendNodeId (number) as their element reference
@@ -33,6 +33,12 @@ function assertValidNodeId(id: number): void {
 function assertValidQuad(quad: number[]): void {
   if (quad.length < 8) {
     throw new Error(`Expected quad with 8 values, got ${quad.length}`);
+  }
+}
+
+function assertValidCoordinates(x: number, y: number): void {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
+    throw new RangeError(`Invalid coordinates: (${x}, ${y}) — both x and y must be non-negative numbers`);
   }
 }
 
@@ -207,6 +213,74 @@ export async function hoverByBackendNodeId(
 
     return center;
   });
+}
+
+// ── Coordinate-based interactions ────────────────────────────────────────
+
+/**
+ * Click at absolute viewport coordinates.
+ *
+ * Dispatches mousePressed and mouseReleased events at (x, y) without
+ * requiring an element reference. Useful for Canvas-rendered charts,
+ * custom visualizations, and elements that lack stable CSS selectors
+ * or accessibility refs.
+ *
+ * @returns The coordinates where the click was dispatched
+ * @throws RangeError if x or y is negative or NaN
+ */
+export async function clickAtCoordinates(
+  x: number,
+  y: number,
+): Promise<{ x: number; y: number }> {
+  assertValidCoordinates(x, y);
+  const cdp = await ensureCDPSession();
+
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+
+  return { x, y };
+}
+
+/**
+ * Hover at absolute viewport coordinates.
+ *
+ * Dispatches a mouseMoved event at (x, y) without requiring an element
+ * reference. Useful for triggering tooltips on Canvas charts, custom
+ * visualizations, and elements that lack stable CSS selectors or
+ * accessibility refs.
+ *
+ * @returns The coordinates where the hover was dispatched
+ * @throws RangeError if x or y is negative or NaN
+ */
+export async function hoverAtCoordinates(
+  x: number,
+  y: number,
+): Promise<{ x: number; y: number }> {
+  assertValidCoordinates(x, y);
+  const cdp = await ensureCDPSession();
+
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x,
+    y,
+    button: "none",
+    clickCount: 0,
+  });
+
+  return { x, y };
 }
 
 // ── Bounding box types ──────────────────────────────────────────────────
