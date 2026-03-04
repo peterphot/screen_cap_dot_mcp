@@ -104,7 +104,7 @@ export function registerNavigationTools(server: McpServer): void {
   server.tool(
     "browser_click",
     "Click an element. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e3'). Alternative: CSS selector.",
-    { selector: z.string().optional(), ref: z.string().optional() },
+    { selector: z.string().optional().describe("CSS selector of the element to click"), ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e3')") },
     async ({ selector, ref }) => {
       try {
         await performClick(selector, ref);
@@ -128,8 +128,8 @@ export function registerNavigationTools(server: McpServer): void {
     "browser_type",
     "Type text into an input. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e6'). Alternative: CSS selector.",
     {
-      selector: z.string().optional(),
-      ref: z.string().optional(),
+      selector: z.string().optional().describe("CSS selector of the input element"),
+      ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e6')"),
       text: z.string(),
       clear: z.boolean().optional(),
     },
@@ -155,7 +155,7 @@ export function registerNavigationTools(server: McpServer): void {
   server.tool(
     "browser_hover",
     "Hover over an element. PREFERRED: use `ref` from browser_a11y_snapshot. Alternative: CSS selector.",
-    { selector: z.string().optional(), ref: z.string().optional() },
+    { selector: z.string().optional().describe("CSS selector of the element to hover over"), ref: z.string().optional().describe("Ref from browser_a11y_snapshot") },
     async ({ selector, ref }) => {
       try {
         await performHover(selector, ref);
