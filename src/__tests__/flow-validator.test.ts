@@ -455,6 +455,19 @@ describe("FlowValidator", () => {
       expect(report.steps[0].status).toBe("skip");
     });
 
+    it("marks scroll_to_text step as 'skip'", async () => {
+      const flow: FlowDefinition = {
+        name: "scroll-to-text-skip",
+        steps: [{ action: "scroll_to_text", text: "Insights Table" }],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      expect(report.steps[0].status).toBe("skip");
+    });
+
     it("marks wait/smart step as 'skip'", async () => {
       const flow: FlowDefinition = {
         name: "wait-smart-skip",

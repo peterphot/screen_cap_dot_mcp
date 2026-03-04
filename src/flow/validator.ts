@@ -15,8 +15,8 @@
  * - Conditional steps (if_visible, if_not_visible):
  *   The condition itself is marked as "skip" (checked at runtime).
  *   Nested steps in `then` and `else` branches are validated recursively.
- * - Non-targetable steps (navigate, scroll, sleep, screenshot, evaluate,
- *   a11y_snapshot, click_at, hover_at, press_key, wait/smart,
+ * - Non-targetable steps (navigate, scroll, scroll_to_text, sleep, screenshot,
+ *   evaluate, a11y_snapshot, click_at, hover_at, press_key, wait/smart,
  *   wait/network_idle, wait/delay, wait/function):
  *   Marked as "skip" (no validation needed).
  */
