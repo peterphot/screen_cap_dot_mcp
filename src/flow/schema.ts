@@ -5,8 +5,8 @@
  * Each step has an `action` field (discriminated union) and action-specific params.
  * Steps can have optional `label` for naming screenshots/moments.
  *
- * Supported actions: navigate, click, click_at, type, hover, hover_at, wait,
- * scroll, screenshot, a11y_snapshot, evaluate, sleep.
+ * Supported actions: navigate, click, click_at, type, hover, hover_at, press_key,
+ * wait, scroll, screenshot, a11y_snapshot, evaluate, sleep.
  *
  * Element targeting: click, type, and hover steps accept exactly one of:
  * - `selector` (CSS selector)
@@ -91,6 +91,12 @@ const HoverAtStep = z.object({
   action: z.literal("hover_at"),
   x: z.number().nonnegative(),
   y: z.number().nonnegative(),
+  label: z.string().optional(),
+});
+
+const PressKeyStep = z.object({
+  action: z.literal("press_key"),
+  key: z.string().min(1),
   label: z.string().optional(),
 });
 
@@ -182,6 +188,7 @@ export const FlowStepSchema = z.union([
   TypeStep,
   HoverStep,
   HoverAtStep,
+  PressKeyStep,
   WaitStep,
   ScrollStep,
   ScreenshotStep,

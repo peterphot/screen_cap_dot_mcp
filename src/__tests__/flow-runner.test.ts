@@ -118,6 +118,7 @@ interface MockPage {
   $: ReturnType<typeof vi.fn>;
   screencast: ReturnType<typeof vi.fn>;
   accessibility: { snapshot: ReturnType<typeof vi.fn> };
+  keyboard: { press: ReturnType<typeof vi.fn> };
 }
 
 let mockPage: MockPage;
@@ -162,6 +163,7 @@ beforeEach(() => {
     $: vi.fn(),
     screencast: vi.fn().mockResolvedValue(mockRecorder),
     accessibility: { snapshot: vi.fn().mockResolvedValue({ role: "WebArea" }) },
+    keyboard: { press: vi.fn().mockResolvedValue(undefined) },
   };
 
   mockEnsurePage.mockResolvedValue(mockPage);
@@ -982,6 +984,94 @@ describe("coordinate-based steps", () => {
     expect(result.steps[0].label).toBe("tooltip-area");
     expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600);
     expect(result.steps[0].screenshotPath).toContain("tooltip-area");
+  });
+});
+
+// ── Press key steps ──────────────────────────────────────────────────────
+
+describe("press_key steps", () => {
+  const runner = new FlowRunner();
+
+  it("executes press_key step by calling page.keyboard.press", async () => {
+    const flow: FlowDefinition = {
+      name: "press-key-test",
+      steps: [{ action: "press_key" as const, key: "Escape" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("press_key");
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Escape");
+  });
+
+  it("executes press_key step with Enter key", async () => {
+    const flow: FlowDefinition = {
+      name: "press-enter",
+      steps: [{ action: "press_key" as const, key: "Enter" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Enter");
+  });
+
+  it("executes press_key step with modifier combination", async () => {
+    const flow: FlowDefinition = {
+      name: "press-ctrl-a",
+      steps: [{ action: "press_key" as const, key: "Control+a" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Control+a");
+  });
+
+  it("captures error when press_key fails", async () => {
+    mockPage.keyboard.press.mockRejectedValueOnce(new Error("Key not recognized"));
+
+    const flow: FlowDefinition = {
+      name: "press-key-fail",
+      steps: [{ action: "press_key" as const, key: "BadKey" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Key not recognized");
+  });
+
+  it("captures artifacts for labeled press_key step", async () => {
+    const flow: FlowDefinition = {
+      name: "press-key-labeled",
+      steps: [{ action: "press_key" as const, key: "Escape", label: "close-modal" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].label).toBe("close-modal");
+    expect(result.steps[0].screenshotPath).toContain("close-modal");
+  });
+
+  it("continues executing after press_key failure", async () => {
+    mockPage.keyboard.press.mockRejectedValueOnce(new Error("Key failed"));
+
+    const flow: FlowDefinition = {
+      name: "press-key-continue",
+      steps: [
+        { action: "press_key" as const, key: "BadKey" },
+        { action: "navigate", url: "https://example.com" },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[1].success).toBe(true);
   });
 });
 

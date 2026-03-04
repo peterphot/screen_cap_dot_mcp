@@ -1,16 +1,15 @@
 {
-  "feature": "flow-dry-run-validation",
+  "feature": "press-key",
   "tickets": {
     "enabled": false,
     "type": null,
     "team": null,
-    "sourceTicket": "PP-30",
+    "sourceTicket": "PP-31",
     "mapping": {}
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write tests for flow validator (src/__tests__/flow-validator.test.ts)" },
-    "T002": { "status": "complete", "description": "Implement flow validator module (src/flow/validator.ts)" },
-    "T003": { "status": "complete", "description": "Write tests for browser_validate_flow tool registration" },
-    "T004": { "status": "complete", "description": "Register browser_validate_flow tool in src/tools/flow.ts" }
+    "T001": { "status": "in_progress", "description": "Test + implement browser_press_key tool in navigation.ts" },
+    "T002": { "status": "pending", "description": "Test + implement PressKeyStep schema in flow/schema.ts" },
+    "T003": { "status": "pending", "description": "Test + implement press_key step in flow/runner.ts" }
   }
 }
