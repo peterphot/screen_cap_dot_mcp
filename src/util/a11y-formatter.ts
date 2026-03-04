@@ -38,6 +38,17 @@ export interface FormatOptions {
   maxDepth?: number;
 }
 
+// ── Constants ────────────────────────────────────────────────────────────
+
+/** Hard recursion cap to prevent stack overflow on deeply nested or malformed trees. */
+const MAX_RECURSION_DEPTH = 512;
+
+/** Maximum consecutive same-role siblings before truncation. */
+const MAX_SAME_ROLE_SIBLINGS = 3;
+
+/** Maximum iterations for unwrapping generic/none single-child wrappers. */
+const MAX_UNWRAP_ITERATIONS = 100;
+
 // ── filterTree ──────────────────────────────────────────────────────────
 
 /**
@@ -45,68 +56,70 @@ export interface FormatOptions {
  *
  * 1. Unwrap generic/none nodes with exactly one child.
  * 2. Collapse leaf StaticText nodes into their parent's name.
- * 3. Truncate repeated same-role sibling runs after 3.
+ * 3. Truncate repeated same-role sibling runs after MAX_SAME_ROLE_SIBLINGS.
  *
- * Returns a **new** tree — the original is not mutated.
+ * Returns a **new** tree -- the original is not mutated.
  */
 export function filterTree(node: A11ySnapshotNode): A11ySnapshotNode {
-  return filterNode(deepClone(node));
+  return filterNode(node, 0);
 }
 
-/** Deep-clone a node tree using structured clone semantics. */
-function deepClone(node: A11ySnapshotNode): A11ySnapshotNode {
-  const clone: A11ySnapshotNode = { ...node };
-  if (node.children) {
-    clone.children = node.children.map(deepClone);
+/**
+ * Single-pass clone-and-filter: builds a new filtered node tree without
+ * mutating the original. Combines deep clone + filter into one traversal.
+ */
+function filterNode(node: A11ySnapshotNode, depth: number): A11ySnapshotNode {
+  if (depth > MAX_RECURSION_DEPTH) {
+    return { ...node };
   }
+
+  const clone: A11ySnapshotNode = { ...node };
+
+  if (!node.children || node.children.length === 0) {
+    // Preserve empty children array if present (clone already has it via spread)
+    return clone;
+  }
+
+  // Recursively clone-and-filter children
+  clone.children = node.children.map((child) => filterNode(child, depth + 1));
+
+  // 1. Unwrap generic/none with single child
+  clone.children = unwrapGenericNodes(clone.children);
+
+  // 2. Collapse leaf StaticText into parent
+  collapseStaticText(clone);
+
+  // collapseStaticText may have deleted clone.children -- bail early if so
+  if (!clone.children) {
+    return clone;
+  }
+
+  // 3. Truncate same-role sibling runs
+  clone.children = truncateSiblingRuns(clone.children);
+
+  // Clean up empty children array
+  if (clone.children.length === 0) {
+    delete clone.children;
+  }
+
   return clone;
 }
 
 /**
- * In-place filter pass on a (cloned) node. Returns the possibly-replaced node.
- */
-function filterNode(node: A11ySnapshotNode): A11ySnapshotNode {
-  if (!node.children || node.children.length === 0) {
-    return node;
-  }
-
-  // Recursively filter children first
-  node.children = node.children.map(filterNode);
-
-  // ── 1. Unwrap generic/none with single child ──────────────────────
-  node.children = unwrapGenericNodes(node.children);
-
-  // ── 2. Collapse leaf StaticText into parent ───────────────────────
-  collapseStaticText(node);
-
-  // collapseStaticText may have deleted node.children — bail early if so
-  if (!node.children) {
-    return node;
-  }
-
-  // ── 3. Truncate same-role sibling runs ────────────────────────────
-  node.children = truncateSiblingRuns(node.children);
-
-  // Clean up empty children array
-  if (node.children.length === 0) {
-    delete node.children;
-  }
-
-  return node;
-}
-
-/**
  * Replace generic/none single-child wrappers with their child.
- * Applies recursively in case unwrapping reveals another wrapper.
+ * Applies iteratively in case unwrapping reveals another wrapper.
  */
 function unwrapGenericNodes(children: A11ySnapshotNode[]): A11ySnapshotNode[] {
   return children.map((child) => {
     let current = child;
+    let iterations = 0;
     while (
+      iterations < MAX_UNWRAP_ITERATIONS &&
       (current.role === "generic" || current.role === "none") &&
       current.children?.length === 1
     ) {
       current = current.children[0];
+      iterations++;
     }
     return current;
   });
@@ -134,7 +147,7 @@ function collapseStaticText(node: A11ySnapshotNode): void {
 }
 
 /**
- * Truncate consecutive runs of the same role to at most 3,
+ * Truncate consecutive runs of the same role to at most MAX_SAME_ROLE_SIBLINGS,
  * replacing the rest with a truncation marker node.
  */
 function truncateSiblingRuns(children: A11ySnapshotNode[]): A11ySnapshotNode[] {
@@ -151,13 +164,15 @@ function truncateSiblingRuns(children: A11ySnapshotNode[]): A11ySnapshotNode[] {
 
     const runLength = runEnd - i;
 
-    if (runLength > 3) {
-      // Keep first 3, add truncation marker
-      result.push(children[i], children[i + 1], children[i + 2]);
-      const remaining = runLength - 3;
+    if (runLength > MAX_SAME_ROLE_SIBLINGS) {
+      // Keep first MAX_SAME_ROLE_SIBLINGS, add truncation marker
+      for (let j = 0; j < MAX_SAME_ROLE_SIBLINGS; j++) {
+        result.push(children[i + j]);
+      }
+      const remaining = runLength - MAX_SAME_ROLE_SIBLINGS;
       result.push({
         role: "truncation",
-        name: `... ${remaining} more ${role}s`,
+        name: `... ${remaining} more ${role}`,
       });
     } else {
       // Keep all
@@ -184,6 +199,20 @@ const BOOL_PROPS = [
   "readonly",
 ] as const;
 
+/** Memoized indent strings to avoid repeated string construction. */
+const indentCache: string[] = [''];
+function getIndent(depth: number): string {
+  while (indentCache.length <= depth) {
+    indentCache.push(indentCache[indentCache.length - 1] + '  ');
+  }
+  return indentCache[depth];
+}
+
+/** Escape embedded quotes and newlines to preserve one-line-per-node format. */
+function escapeString(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+}
+
 /**
  * Render an accessibility tree node to compact indented text.
  *
@@ -207,7 +236,9 @@ function renderNode(
   lines: string[],
   maxDepth?: number,
 ): void {
-  const indent = "  ".repeat(depth);
+  if (depth > MAX_RECURSION_DEPTH) return;
+
+  const indent = getIndent(depth);
 
   // Special handling for truncation markers from filterTree
   if (node.role === "truncation" && node.name) {
@@ -227,13 +258,13 @@ function renderNode(
   }
 
   if (node.name !== undefined && node.name !== "") {
-    parts.push(`"${node.name}"`);
+    parts.push(`"${escapeString(node.name)}"`);
   }
 
   // Append non-default properties
-  // value is a string property — always show (even empty string)
+  // value is a string property -- always show (even empty string)
   if (node.value !== undefined) {
-    parts.push(`value="${node.value}"`);
+    parts.push(`value="${escapeString(node.value)}"`);
   }
 
   for (const prop of BOOL_PROPS) {
@@ -253,7 +284,9 @@ function renderNode(
   if (!children || children.length === 0) return;
 
   if (maxDepth !== undefined && depth >= maxDepth) {
-    lines.push(`${indent}  ... ${children.length} children`);
+    const count = children.length;
+    const noun = count === 1 ? "child" : "children";
+    lines.push(`${getIndent(depth + 1)}... ${count} ${noun}`);
     return;
   }
 

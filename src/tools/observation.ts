@@ -141,7 +141,7 @@ export function registerObservationTools(server: McpServer): void {
     {
       interestingOnly: z.boolean().optional(),
       format: z.enum(["tree", "json"]).optional(),
-      maxDepth: z.number().optional(),
+      maxDepth: z.number().int().min(0).max(100).optional(),
     },
     async ({ interestingOnly, format, maxDepth }) => {
       try {
@@ -151,21 +151,25 @@ export function registerObservationTools(server: McpServer): void {
           interestingOnly: interestingOnly ?? true,
         });
 
-        if (snapshot) {
-          annotateTreeWithRefs(snapshot as A11ySnapshotNode);
+        if (!snapshot) {
+          return {
+            content: [{ type: "text" as const, text: "null" }],
+          };
         }
+
+        annotateTreeWithRefs(snapshot as A11ySnapshotNode);
 
         const outputFormat = format ?? "tree";
 
         let text: string;
-        if (outputFormat === "json" || !snapshot) {
+        if (outputFormat === "json") {
           const raw = JSON.stringify(snapshot);
           text = raw.length > MAX_A11Y_CHARS
             ? raw.slice(0, MAX_A11Y_CHARS) + `\n... (truncated, total ${raw.length} chars)`
             : raw;
         } else {
           const filtered = filterTree(snapshot as A11ySnapshotNode);
-          text = formatA11yTree(filtered, maxDepth !== undefined ? { maxDepth } : undefined);
+          text = formatA11yTree(filtered, { maxDepth });
           if (text.length > MAX_A11Y_CHARS) {
             text = text.slice(0, MAX_A11Y_CHARS) + `\n... (truncated, total ${text.length} chars)`;
           }

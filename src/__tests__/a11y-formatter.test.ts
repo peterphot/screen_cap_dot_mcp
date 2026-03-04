@@ -228,7 +228,7 @@ describe("filterTree", () => {
       expect(result.children![1].role).toBe("row");
       expect(result.children![2].role).toBe("row");
       // Last item should be a truncation marker
-      expect(result.children![3].name).toContain("22 more rows");
+      expect(result.children![3].name).toContain("22 more row");
     });
 
     it("does not truncate when fewer than 4 siblings of same role", () => {
@@ -284,8 +284,18 @@ describe("filterTree", () => {
       expect(result.children![1].role).toBe("row");
       expect(result.children![2].role).toBe("row");
       expect(result.children![3].role).toBe("row");
-      expect(result.children![4].name).toContain("7 more rows");
+      expect(result.children![4].name).toContain("7 more row");
       expect(result.children![5].role).toBe("button");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles a minimal/empty node with no role, name, or children", () => {
+      const tree: A11ySnapshotNode = {};
+      const result = filterTree(tree);
+      // Should return a new object without crashing
+      expect(result).toEqual({});
+      expect(result).not.toBe(tree);
     });
   });
 
@@ -545,7 +555,7 @@ describe("formatA11yTree", () => {
       // Children of Nav should be cut off
       expect(lines[2]).toContain("... 2 children");
       expect(lines[3]).toContain("main");
-      expect(lines[4]).toContain("... 1 children");
+      expect(lines[4]).toContain("... 1 child");
     });
 
     it("maxDepth 0 shows only root with child count", () => {
@@ -638,14 +648,14 @@ describe("formatA11yTree", () => {
           { role: "row", name: "Row 1", ref: "e2" },
           { role: "row", name: "Row 2", ref: "e3" },
           { role: "row", name: "Row 3", ref: "e4" },
-          { role: "truncation", name: "... 22 more rows" },
+          { role: "truncation", name: "... 22 more row" },
         ],
       };
 
       const output = formatA11yTree(tree);
       const lines = output.split("\n");
       expect(lines).toHaveLength(5);
-      expect(lines[4]).toBe("  ... 22 more rows");
+      expect(lines[4]).toBe("  ... 22 more row");
     });
   });
 });
@@ -720,7 +730,7 @@ describe("filterTree + formatA11yTree integration", () => {
     expect(output).toContain('heading "Welcome" level=1');
     expect(output).toContain('textbox "Search" value=""');
     expect(output).toContain('button "Submit"');
-    expect(output).toContain("22 more rows");
+    expect(output).toContain("22 more row");
     // Should NOT contain StaticText as a visible role
     expect(output).not.toContain("StaticText");
     // Should NOT contain "generic" as a role line
