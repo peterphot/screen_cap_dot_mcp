@@ -936,6 +936,195 @@ describe("FlowValidator", () => {
     });
   });
 
+  // ── Group steps ────────────────────────────────────────────────────
+
+  describe("group steps", () => {
+    it("marks group step itself as 'skip' (similar to conditional steps)", async () => {
+      const flow: FlowDefinition = {
+        name: "group-skip",
+        steps: [
+          {
+            action: "group",
+            name: "Test Group",
+            steps: [{ action: "sleep", duration: 1000 }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      expect(report.steps[0]).toMatchObject({
+        index: 0,
+        action: "group",
+        status: "skip",
+      });
+    });
+
+    it("validates selector-based steps inside a group", async () => {
+      const flow: FlowDefinition = {
+        name: "group-selector",
+        steps: [
+          {
+            action: "group",
+            name: "Selector Group",
+            steps: [{ action: "click", selector: ".btn" }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      const nestedStep = report.steps.find((s) => s.action === "click");
+      expect(nestedStep).toBeDefined();
+      expect(nestedStep!.status).toBe("ok");
+    });
+
+    it("reports missing selector inside a group as invalid", async () => {
+      mockPage.waitForSelector.mockRejectedValue(new Error("Timeout"));
+
+      const flow: FlowDefinition = {
+        name: "group-missing",
+        steps: [
+          {
+            action: "group",
+            name: "Missing Group",
+            steps: [{ action: "click", selector: ".nonexistent" }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(false);
+      const nestedStep = report.steps.find((s) => s.action === "click");
+      expect(nestedStep).toBeDefined();
+      expect(nestedStep!.status).toBe("missing");
+    });
+
+    it("validates ref-based steps inside a group", async () => {
+      mockResolveRef.mockReturnValue(42);
+
+      const flow: FlowDefinition = {
+        name: "group-ref",
+        steps: [
+          {
+            action: "group",
+            name: "Ref Group",
+            steps: [{ action: "click", ref: "e1" }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+    });
+
+    it("validates match-based steps inside a group", async () => {
+      const flow: FlowDefinition = {
+        name: "group-match",
+        steps: [
+          {
+            action: "group",
+            name: "Match Group",
+            steps: [{ action: "click", match: { role: "button", name: "Submit" } }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+    });
+
+    it("validates nested groups recursively", async () => {
+      const flow: FlowDefinition = {
+        name: "nested-groups",
+        steps: [
+          {
+            action: "group",
+            name: "Outer Group",
+            steps: [
+              {
+                action: "group",
+                name: "Inner Group",
+                steps: [{ action: "click", selector: ".inner .btn" }],
+              },
+            ],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      // Should have at least 3 results: outer group, inner group, inner click
+      expect(report.steps.length).toBeGreaterThanOrEqual(3);
+      const clickStep = report.steps.find((s) => s.action === "click");
+      expect(clickStep).toBeDefined();
+      expect(clickStep!.status).toBe("ok");
+    });
+
+    it("validates non-targetable steps inside a group as skip", async () => {
+      const flow: FlowDefinition = {
+        name: "group-non-targetable",
+        steps: [
+          {
+            action: "group",
+            name: "Skip Group",
+            steps: [
+              { action: "navigate", url: "https://example.com" },
+              { action: "sleep", duration: 1000 },
+            ],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      const navStep = report.steps.find((s) => s.action === "navigate");
+      expect(navStep).toBeDefined();
+      expect(navStep!.status).toBe("skip");
+    });
+
+    it("validates group containing conditional steps", async () => {
+      const flow: FlowDefinition = {
+        name: "group-with-conditional",
+        steps: [
+          {
+            action: "group",
+            name: "Conditional Group",
+            steps: [
+              {
+                action: "if_visible",
+                selector: ".banner",
+                then: [{ action: "click", selector: ".btn" }],
+                else: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      // group (skip) + if_visible (skip) + click (ok)
+      expect(report.steps.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
   // ── No actions executed ─────────────────────────────────────────────
 
   describe("no actions executed", () => {

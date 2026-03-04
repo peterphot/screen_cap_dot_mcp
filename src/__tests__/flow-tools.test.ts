@@ -191,6 +191,7 @@ describe("Flow tools registration", () => {
       expect(mockFlowRunnerRun).toHaveBeenCalledWith(
         expect.objectContaining({ name: "test-flow" }),
         true,
+        undefined,
       );
     });
 
@@ -258,6 +259,32 @@ describe("Flow tools registration", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Browser crashed");
+    });
+
+    it("passes section param to runner when provided", async () => {
+      mockFlowRunnerRun.mockResolvedValue(mockRunResult);
+      const handler = getToolHandler(server, "browser_run_flow");
+
+      await handler({ flow: validFlow, section: "Filter Interactions" });
+
+      expect(mockFlowRunnerRun).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "test-flow" }),
+        undefined,
+        "Filter Interactions",
+      );
+    });
+
+    it("does not pass section when not provided", async () => {
+      mockFlowRunnerRun.mockResolvedValue(mockRunResult);
+      const handler = getToolHandler(server, "browser_run_flow");
+
+      await handler({ flow: validFlow });
+
+      expect(mockFlowRunnerRun).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "test-flow" }),
+        undefined,
+        undefined,
+      );
     });
   });
 

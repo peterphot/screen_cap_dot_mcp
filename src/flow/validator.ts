@@ -100,6 +100,11 @@ export class FlowValidator {
     return (step.action === "if_visible" || step.action === "if_not_visible") && "then" in step && "else" in step;
   }
 
+  /** Type guard for group steps with nested steps array. */
+  private isGroupStep(step: FlowStep): step is FlowStep & { steps: FlowStep[] } {
+    return step.action === "group" && "steps" in step;
+  }
+
   // ── Recursive helpers ───────────────────────────────────────────────
 
   /**
@@ -113,6 +118,11 @@ export class FlowValidator {
       if (this.isConditionalStep(step)) {
         if ("match" in step && (step as Record<string, unknown>).match) return true;
         if (this.hasMatchStepsRecursive(step.then) || this.hasMatchStepsRecursive(step.else)) {
+          return true;
+        }
+      }
+      if (this.isGroupStep(step)) {
+        if (this.hasMatchStepsRecursive(step.steps)) {
           return true;
         }
       }
@@ -141,6 +151,11 @@ export class FlowValidator {
       if (this.isConditionalStep(step)) {
         await this.validateSteps(page, step.then, stepResults, timeout, cachedSnapshot);
         await this.validateSteps(page, step.else, stepResults, timeout, cachedSnapshot);
+      }
+
+      // If this is a group step, recursively validate nested steps
+      if (this.isGroupStep(step)) {
+        await this.validateSteps(page, step.steps, stepResults, timeout, cachedSnapshot);
       }
     }
   }

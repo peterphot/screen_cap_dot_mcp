@@ -32,6 +32,24 @@ import { resolveMatch } from "../util/a11y-matcher.js";
 import { scrollToText } from "../util/scroll-to-text.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * Step actions that mutate the page, invalidating any cached a11y snapshot.
+ */
+const MUTATING_STEP_ACTIONS = [
+  "click",
+  "click_at",
+  "type",
+  "navigate",
+  "evaluate",
+  "press_key",
+  "scroll",
+  "scroll_to_text",
+  "hover",
+  "hover_at",
+] as const;
+
 // ── Path confinement ──────────────────────────────────────────────────────
 
 /**
@@ -78,9 +96,11 @@ export class FlowRunner {
    *
    * @param flow - Validated flow definition
    * @param recordOverride - Override the flow's recording config (true/false)
+   * @param section - If provided, only execute the named top-level group section.
+   *   Throws if no top-level group with that name exists in the flow.
    * @returns Results with step outcomes and artifact paths
    */
-  async run(flow: FlowDefinition, recordOverride?: boolean): Promise<FlowRunResult> {
+  async run(flow: FlowDefinition, recordOverride?: boolean, section?: string): Promise<FlowRunResult> {
     const runStart = Date.now();
     const page = await ensurePage();
 
@@ -112,11 +132,24 @@ export class FlowRunner {
       logger.info(`Recording started: ${recordingPath}`);
     }
 
+    // Determine which steps to execute (optionally filter by section)
+    let stepsToExecute = flow.steps;
+    if (section) {
+      const groupStep = flow.steps.find(
+        (s) => s.action === "group" && "name" in s && (s as { name: string }).name === section,
+      );
+      if (!groupStep) {
+        throw new Error(`Section "${section}" not found in flow "${flow.name}".`);
+      }
+      stepsToExecute = [groupStep];
+      logger.info(`Running only section "${section}"`);
+    }
+
     // Execute steps
     const stepResults: StepResult[] = [];
 
-    for (let i = 0; i < flow.steps.length; i++) {
-      const step = flow.steps[i];
+    for (let i = 0; i < stepsToExecute.length; i++) {
+      const step = stepsToExecute[i];
       const stepStart = Date.now();
       const result: StepResult = {
         stepIndex: i,
@@ -333,6 +366,40 @@ export class FlowRunner {
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
 
+      case "group": {
+        logger.info(`Group "${step.name}" started`);
+        // Zod schema guarantees step.steps is FlowStep[] when action === "group"
+        const groupSteps = step.steps as FlowStep[];
+        let groupSnapshot = cachedSnapshot;
+        if (!groupSnapshot) {
+          const hasMatch = groupSteps.some((s) => "match" in s && (s as Record<string, unknown>).match);
+          if (hasMatch) {
+            const snap = await page.accessibility.snapshot({ interestingOnly: false });
+            if (snap) groupSnapshot = snap as A11ySnapshotNode;
+          }
+        }
+
+        for (let j = 0; j < groupSteps.length; j++) {
+          const nestedStep = groupSteps[j];
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, groupSnapshot, shouldAnimate);
+          // Invalidate snapshot after any step that mutates the page
+          if ((MUTATING_STEP_ACTIONS as readonly string[]).includes(nestedStep.action)) {
+            groupSnapshot = undefined;
+          }
+          // Re-fetch snapshot if invalidated and remaining steps use match
+          if (!groupSnapshot && j < groupSteps.length - 1) {
+            const remaining = groupSteps.slice(j + 1);
+            const needsMatch = remaining.some((s) => "match" in s && (s as Record<string, unknown>).match);
+            if (needsMatch) {
+              const snap = await page.accessibility.snapshot({ interestingOnly: false });
+              if (snap) groupSnapshot = snap as A11ySnapshotNode;
+            }
+          }
+        }
+        logger.info(`Group "${step.name}" completed`);
+        break;
+      }
+
       case "if_visible":
       case "if_not_visible": {
         const isVisible = await this.checkVisibility(page, step, cachedSnapshot);
@@ -357,7 +424,7 @@ export class FlowRunner {
           const nestedStep = branchSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
-          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
+          if ((MUTATING_STEP_ACTIONS as readonly string[]).includes(nestedStep.action)) {
             branchSnapshot = undefined;
           }
           // Re-fetch snapshot if invalidated and remaining steps use match
