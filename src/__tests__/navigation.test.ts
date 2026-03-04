@@ -957,4 +957,19 @@ describe("browser_press_key", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Key press failed");
   });
+
+  it("truncates long key values in error messages to 50 characters", async () => {
+    const longKey = "A".repeat(80);
+    mockPage.keyboard.press.mockRejectedValue(new Error("Key press failed"));
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: longKey },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    // Should contain the truncated key (50 chars + ellipsis), not the full 80-char key
+    expect(result.content[0].text).toContain("A".repeat(50));
+    expect(result.content[0].text).not.toContain("A".repeat(80));
+  });
 });

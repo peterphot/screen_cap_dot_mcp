@@ -235,7 +235,7 @@ export function registerNavigationTools(server: McpServer): void {
     "browser_press_key",
     "Dispatch a keyboard event. Supports common keys (Escape, Tab, Enter, ArrowDown, ArrowUp, ArrowLeft, ArrowRight) and modifier combinations (e.g. \"Control+a\" for select-all).",
     {
-      key: z.string().describe("Key to press (e.g. 'Escape', 'Tab', 'Enter', 'ArrowDown', 'Control+a')"),
+      key: z.string().regex(/^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/).describe("Key to press (e.g. 'Escape', 'Tab', 'Enter', 'ArrowDown', 'Control+a')"),
     },
     async ({ key }) => {
       try {
@@ -245,8 +245,9 @@ export function registerNavigationTools(server: McpServer): void {
           content: [{ type: "text" as const, text: `Pressed key: ${key}` }],
         };
       } catch (err) {
+        const safeKey = key.length > 50 ? key.slice(0, 50) + "\u2026" : key;
         return {
-          content: [{ type: "text" as const, text: `Error pressing key ${key}: ${(err as Error).message}` }],
+          content: [{ type: "text" as const, text: `Error pressing key ${safeKey}: ${(err as Error).message}` }],
           isError: true,
         };
       }

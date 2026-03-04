@@ -96,7 +96,7 @@ const HoverAtStep = z.object({
 
 const PressKeyStep = z.object({
   action: z.literal("press_key"),
-  key: z.string().min(1),
+  key: z.string().min(1).regex(/^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/, "Invalid key format. Use key names like 'Enter', 'Tab', or modifier combos like 'Control+a'."),
   label: z.string().optional(),
 });
 
