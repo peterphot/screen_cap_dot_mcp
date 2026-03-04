@@ -19,6 +19,7 @@ import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
 import { performClick, performType, performHover } from "../util/actions.js";
+import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs } from "../ref-store.js";
 
@@ -200,12 +201,20 @@ export class FlowRunner {
         await performClick(step.selector, step.ref, page);
         break;
 
+      case "click_at":
+        await clickAtCoordinates(step.x, step.y);
+        break;
+
       case "type":
         await performType(step.text, step.selector, step.ref, step.clear, page);
         break;
 
       case "hover":
         await performHover(step.selector, step.ref, page);
+        break;
+
+      case "hover_at":
+        await hoverAtCoordinates(step.x, step.y);
         break;
 
       case "wait":

@@ -11,6 +11,9 @@
  * - typeByBackendNodeId focuses element and inserts text
  * - typeByBackendNodeId with clear=true sends Ctrl+A first
  * - hoverByBackendNodeId dispatches mouseMoved
+ * - clickAtCoordinates dispatches mousePressed + mouseReleased at exact (x, y)
+ * - hoverAtCoordinates dispatches mouseMoved at exact (x, y)
+ * - Coordinate validation rejects negative values
  * - Error handling for empty quads (display:none / zero-size elements)
  * - Error handling for stale nodes ("Could not find node")
  * - getElementBoundingBox returns bounding box without scrolling
@@ -42,6 +45,8 @@ import {
   clickByBackendNodeId,
   typeByBackendNodeId,
   hoverByBackendNodeId,
+  clickAtCoordinates,
+  hoverAtCoordinates,
   getElementBoundingBox,
   batchGetBoundingBoxes,
   getViewportBounds,
@@ -534,5 +539,124 @@ describe("batchGetBoundingBoxes", () => {
     expect(result.get(10)).toEqual({ x: 0, y: 0, width: 100, height: 50 });
     // Only one CDP call despite three input IDs
     expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── clickAtCoordinates() ──────────────────────────────────────────────
+
+describe("clickAtCoordinates", () => {
+  it("dispatches mousePressed + mouseReleased at exact coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(150, 250);
+
+    const calls = mockSend.mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mousePressed", x: 150, y: 250, button: "left", clickCount: 1 },
+    ]);
+    expect(calls[1]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mouseReleased", x: 150, y: 250, button: "left", clickCount: 1 },
+    ]);
+  });
+
+  it("works with zero coordinates (top-left corner)", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(0, 0);
+
+    const calls = mockSend.mock.calls;
+    expect(calls[0]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mousePressed", x: 0, y: 0, button: "left", clickCount: 1 },
+    ]);
+    expect(calls[1]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mouseReleased", x: 0, y: 0, button: "left", clickCount: 1 },
+    ]);
+  });
+
+  it("works with fractional coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(100.5, 200.7);
+
+    const calls = mockSend.mock.calls;
+    expect(calls[0][1].x).toBe(100.5);
+    expect(calls[0][1].y).toBe(200.7);
+  });
+
+  it("rejects negative x coordinate", async () => {
+    await expect(clickAtCoordinates(-1, 100)).rejects.toThrow(RangeError);
+    await expect(clickAtCoordinates(-1, 100)).rejects.toThrow("Invalid coordinates");
+  });
+
+  it("rejects negative y coordinate", async () => {
+    await expect(clickAtCoordinates(100, -1)).rejects.toThrow(RangeError);
+    await expect(clickAtCoordinates(100, -1)).rejects.toThrow("Invalid coordinates");
+  });
+
+  it("rejects NaN coordinates", async () => {
+    await expect(clickAtCoordinates(NaN, 100)).rejects.toThrow(RangeError);
+    await expect(clickAtCoordinates(100, NaN)).rejects.toThrow(RangeError);
+  });
+});
+
+// ── hoverAtCoordinates() ──────────────────────────────────────────────
+
+describe("hoverAtCoordinates", () => {
+  it("dispatches mouseMoved at exact coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(300, 400);
+
+    const calls = mockSend.mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mouseMoved", x: 300, y: 400, button: "none", clickCount: 0 },
+    ]);
+  });
+
+  it("works with zero coordinates (top-left corner)", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(0, 0);
+
+    const calls = mockSend.mock.calls;
+    expect(calls[0]).toEqual([
+      "Input.dispatchMouseEvent",
+      { type: "mouseMoved", x: 0, y: 0, button: "none", clickCount: 0 },
+    ]);
+  });
+
+  it("works with fractional coordinates", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(55.5, 77.3);
+
+    const calls = mockSend.mock.calls;
+    expect(calls[0][1].x).toBe(55.5);
+    expect(calls[0][1].y).toBe(77.3);
+  });
+
+  it("rejects negative x coordinate", async () => {
+    await expect(hoverAtCoordinates(-1, 100)).rejects.toThrow(RangeError);
+    await expect(hoverAtCoordinates(-1, 100)).rejects.toThrow("Invalid coordinates");
+  });
+
+  it("rejects negative y coordinate", async () => {
+    await expect(hoverAtCoordinates(100, -1)).rejects.toThrow(RangeError);
+    await expect(hoverAtCoordinates(100, -1)).rejects.toThrow("Invalid coordinates");
+  });
+
+  it("rejects NaN coordinates", async () => {
+    await expect(hoverAtCoordinates(NaN, 100)).rejects.toThrow(RangeError);
+    await expect(hoverAtCoordinates(100, NaN)).rejects.toThrow(RangeError);
   });
 });

@@ -1,12 +1,14 @@
 /**
  * Navigation tools for the MCP server.
  *
- * Registers 9 browser automation tools on the McpServer instance:
+ * Registers 11 browser automation tools on the McpServer instance:
  * - browser_connect: Connect to Chrome via CDP
  * - browser_navigate: Navigate to URL
  * - browser_click: Click element by CSS selector or ref
+ * - browser_click_at: Click at absolute viewport coordinates
  * - browser_type: Type into input field by CSS selector or ref
  * - browser_hover: Hover over element by CSS selector or ref
+ * - browser_hover_at: Hover at absolute viewport coordinates
  * - browser_select: Select dropdown option
  * - browser_evaluate: Run arbitrary JS in page context
  * - browser_list_pages: List open tabs
@@ -28,6 +30,7 @@ import {
 import { isRecordingActive } from "../recording-state.js";
 import { clearRefs } from "../ref-store.js";
 import { performClick, performType, performHover } from "../util/actions.js";
+import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
 import logger from "../util/logger.js";
 
@@ -167,6 +170,58 @@ export function registerNavigationTools(server: McpServer): void {
         const target = ref ? `ref ${ref}` : selector;
         return {
           content: [{ type: "text" as const, text: `Error hovering ${target}: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_click_at ─────────────────────────────────────────────────
+
+  server.tool(
+    "browser_click_at",
+    "Click at absolute viewport coordinate (x, y). Use when CSS selectors and a11y refs are unavailable — e.g. Canvas-rendered charts, custom visualizations, or WebGL elements.",
+    {
+      x: z.number().describe("X coordinate in viewport pixels"),
+      y: z.number().describe("Y coordinate in viewport pixels"),
+      label: z.string().optional().describe("Human-readable label for the click target (e.g. 'bar-chart-q3')"),
+    },
+    async ({ x, y, label }) => {
+      try {
+        await clickAtCoordinates(x, y);
+        const desc = label ? ` (${label})` : "";
+        return {
+          content: [{ type: "text" as const, text: `Clicked at (${x}, ${y})${desc}` }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error clicking at (${x}, ${y}): ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_hover_at ────────────────────────────────────────────────
+
+  server.tool(
+    "browser_hover_at",
+    "Hover at absolute viewport coordinate (x, y). Use when CSS selectors and a11y refs are unavailable — e.g. Canvas-rendered charts, custom visualizations, or triggering tooltips on non-DOM elements.",
+    {
+      x: z.number().describe("X coordinate in viewport pixels"),
+      y: z.number().describe("Y coordinate in viewport pixels"),
+      label: z.string().optional().describe("Human-readable label for the hover target (e.g. 'chart-tooltip-area')"),
+    },
+    async ({ x, y, label }) => {
+      try {
+        await hoverAtCoordinates(x, y);
+        const desc = label ? ` (${label})` : "";
+        return {
+          content: [{ type: "text" as const, text: `Hovered at (${x}, ${y})${desc}` }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Error hovering at (${x}, ${y}): ${(err as Error).message}` }],
           isError: true,
         };
       }

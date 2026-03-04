@@ -319,6 +319,134 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // ── click_at step ───────────────────────────────────────────────────
+
+  it("validates a click_at step with x, y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 150,
+      y: 250,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click_at step with label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 100,
+      y: 200,
+      label: "chart-bar",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click_at step with zero coordinates", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 0,
+      y: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a click_at step with negative x", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: -1,
+      y: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click_at step with negative y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 100,
+      y: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click_at step without x", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      y: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click_at step without y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // ── hover_at step ──────────────────────────────────────────────────
+
+  it("validates a hover_at step with x, y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 300,
+      y: 400,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover_at step with label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 500,
+      y: 600,
+      label: "tooltip-area",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover_at step with zero coordinates", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 0,
+      y: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a hover_at step with negative x", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: -1,
+      y: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a hover_at step with negative y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 100,
+      y: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a hover_at step without x", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      y: 100,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a hover_at step without y", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 100,
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("RecordingConfigSchema", () => {

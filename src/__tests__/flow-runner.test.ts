@@ -75,11 +75,15 @@ vi.mock("../util/logger.js", () => ({
 const mockClickByBackendNodeId = vi.fn();
 const mockTypeByBackendNodeId = vi.fn();
 const mockHoverByBackendNodeId = vi.fn();
+const mockClickAtCoordinates = vi.fn();
+const mockHoverAtCoordinates = vi.fn();
 
 vi.mock("../cdp-helpers.js", () => ({
   clickByBackendNodeId: (...args: unknown[]) => mockClickByBackendNodeId(...args),
   typeByBackendNodeId: (...args: unknown[]) => mockTypeByBackendNodeId(...args),
   hoverByBackendNodeId: (...args: unknown[]) => mockHoverByBackendNodeId(...args),
+  clickAtCoordinates: (...args: unknown[]) => mockClickAtCoordinates(...args),
+  hoverAtCoordinates: (...args: unknown[]) => mockHoverAtCoordinates(...args),
 }));
 
 const mockResolveRef = vi.fn();
@@ -156,6 +160,8 @@ beforeEach(() => {
 
   mockEnsurePage.mockResolvedValue(mockPage);
   mockSmartWait.mockResolvedValue({ elapsedMs: 100 });
+  mockClickAtCoordinates.mockResolvedValue(undefined);
+  mockHoverAtCoordinates.mockResolvedValue(undefined);
   mockSafeWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
   mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
@@ -880,5 +886,94 @@ describe("default label uniqueness", () => {
     expect(paths[0]).not.toBe(paths[1]);
     expect(paths[0]).toContain("step-0-a11y");
     expect(paths[1]).toContain("step-1-a11y");
+  });
+});
+
+// ── Coordinate-based steps ──────────────────────────────────────────────
+
+describe("coordinate-based steps", () => {
+  const runner = new FlowRunner();
+
+  it("executes click_at step by calling clickAtCoordinates", async () => {
+    const flow: FlowDefinition = {
+      name: "click-at-test",
+      steps: [{ action: "click_at", x: 150, y: 250 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("click_at");
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(150, 250);
+  });
+
+  it("executes hover_at step by calling hoverAtCoordinates", async () => {
+    const flow: FlowDefinition = {
+      name: "hover-at-test",
+      steps: [{ action: "hover_at", x: 300, y: 400 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("hover_at");
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(300, 400);
+  });
+
+  it("captures error when click_at fails", async () => {
+    mockClickAtCoordinates.mockRejectedValueOnce(new RangeError("Invalid coordinates: (-1, 100)"));
+
+    const flow: FlowDefinition = {
+      name: "click-at-fail",
+      steps: [{ action: "click_at", x: -1, y: 100 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Invalid coordinates");
+  });
+
+  it("captures error when hover_at fails", async () => {
+    mockHoverAtCoordinates.mockRejectedValueOnce(new RangeError("Invalid coordinates: (100, -1)"));
+
+    const flow: FlowDefinition = {
+      name: "hover-at-fail",
+      steps: [{ action: "hover_at", x: 100, y: -1 }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Invalid coordinates");
+  });
+
+  it("executes click_at with label and captures artifacts", async () => {
+    const flow: FlowDefinition = {
+      name: "click-at-labeled",
+      steps: [{ action: "click_at", x: 100, y: 200, label: "chart-bar" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].label).toBe("chart-bar");
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200);
+    // Labeled steps get artifacts captured
+    expect(result.steps[0].screenshotPath).toContain("chart-bar");
+  });
+
+  it("executes hover_at with label and captures artifacts", async () => {
+    const flow: FlowDefinition = {
+      name: "hover-at-labeled",
+      steps: [{ action: "hover_at", x: 500, y: 600, label: "tooltip-area" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].label).toBe("tooltip-area");
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600);
+    expect(result.steps[0].screenshotPath).toContain("tooltip-area");
   });
 });

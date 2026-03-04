@@ -2,11 +2,12 @@
  * Unit tests for navigation tools (src/tools/navigation.ts)
  *
  * All browser module interactions are mocked. These tests verify:
- * - All 9 tools are registered on the McpServer with correct names/descriptions/schemas
+ * - All 11 tools are registered on the McpServer with correct names/descriptions/schemas
  * - Success paths return correct text content
  * - Error paths catch exceptions and return error text (never throw)
  * - Input validation via Zod schemas
  * - Ref-based interaction via CDP helpers (browser_click, browser_type, browser_hover)
+ * - Coordinate-based interaction (browser_click_at, browser_hover_at)
  * - Refs cleared on navigation
  */
 
@@ -45,10 +46,14 @@ vi.mock("../ref-store.js", () => ({
 const mockClickByBackendNodeId = vi.fn();
 const mockTypeByBackendNodeId = vi.fn();
 const mockHoverByBackendNodeId = vi.fn();
+const mockClickAtCoordinates = vi.fn();
+const mockHoverAtCoordinates = vi.fn();
 vi.mock("../cdp-helpers.js", () => ({
   clickByBackendNodeId: (...args: unknown[]) => mockClickByBackendNodeId(...args),
   typeByBackendNodeId: (...args: unknown[]) => mockTypeByBackendNodeId(...args),
   hoverByBackendNodeId: (...args: unknown[]) => mockHoverByBackendNodeId(...args),
+  clickAtCoordinates: (...args: unknown[]) => mockClickAtCoordinates(...args),
+  hoverAtCoordinates: (...args: unknown[]) => mockHoverAtCoordinates(...args),
 }));
 
 // Mock the recording-state module (navigation.ts imports isRecordingActive)
@@ -130,6 +135,8 @@ beforeEach(async () => {
   mockClickByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
   mockTypeByBackendNodeId.mockResolvedValue(undefined);
   mockHoverByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
+  mockClickAtCoordinates.mockResolvedValue(undefined);
+  mockHoverAtCoordinates.mockResolvedValue(undefined);
 
   mockEnsureBrowser.mockResolvedValue({});
   mockEnsurePage.mockResolvedValue(mockPage);
@@ -150,7 +157,7 @@ beforeEach(async () => {
 // ── Tool Registration ───────────────────────────────────────────────────
 
 describe("registerNavigationTools", () => {
-  it("registers all 9 tools on the server", () => {
+  it("registers all 11 tools on the server", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
@@ -163,7 +170,9 @@ describe("registerNavigationTools", () => {
     expect(toolNames).toContain("browser_list_pages");
     expect(toolNames).toContain("browser_switch_page");
     expect(toolNames).toContain("browser_hover");
-    expect(toolNames).toHaveLength(9);
+    expect(toolNames).toContain("browser_click_at");
+    expect(toolNames).toContain("browser_hover_at");
+    expect(toolNames).toHaveLength(11);
   });
 
   it("each tool has a description", () => {
@@ -769,5 +778,101 @@ describe("browser_switch_page", () => {
     expect(result.content[0].text).toContain("Cannot switch tabs while recording");
     expect(mockSwitchToPage).not.toHaveBeenCalled();
     mockIsRecordingActive.mockReturnValue(false);
+  });
+});
+
+// ── browser_click_at ─────────────────────────────────────────────────
+
+describe("browser_click_at", () => {
+  it("calls clickAtCoordinates and returns success text", async () => {
+    const handler = getToolHandler(server, "browser_click_at");
+    const result = await handler(
+      { x: 150, y: 250 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(150, 250);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("150");
+    expect(result.content[0].text).toContain("250");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("includes label in response when provided", async () => {
+    const handler = getToolHandler(server, "browser_click_at");
+    const result = await handler(
+      { x: 100, y: 200, label: "chart-bar" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200);
+    expect(result.content[0].text).toContain("chart-bar");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error text when clickAtCoordinates fails (does not throw)", async () => {
+    mockClickAtCoordinates.mockRejectedValue(new RangeError("Invalid coordinates: (-1, 100)"));
+    const handler = getToolHandler(server, "browser_click_at");
+    const result = await handler(
+      { x: -1, y: 100 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Invalid coordinates");
+  });
+
+  it("has LLM-guiding description mentioning Canvas and coordinates", () => {
+    const tools = getRegisteredTools(server);
+    const tool = tools["browser_click_at"];
+    expect(tool.description).toContain("coordinate");
+  });
+});
+
+// ── browser_hover_at ─────────────────────────────────────────────────
+
+describe("browser_hover_at", () => {
+  it("calls hoverAtCoordinates and returns success text", async () => {
+    const handler = getToolHandler(server, "browser_hover_at");
+    const result = await handler(
+      { x: 300, y: 400 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(300, 400);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("300");
+    expect(result.content[0].text).toContain("400");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("includes label in response when provided", async () => {
+    const handler = getToolHandler(server, "browser_hover_at");
+    const result = await handler(
+      { x: 500, y: 600, label: "tooltip-trigger" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600);
+    expect(result.content[0].text).toContain("tooltip-trigger");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error text when hoverAtCoordinates fails (does not throw)", async () => {
+    mockHoverAtCoordinates.mockRejectedValue(new RangeError("Invalid coordinates: (100, -1)"));
+    const handler = getToolHandler(server, "browser_hover_at");
+    const result = await handler(
+      { x: 100, y: -1 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Invalid coordinates");
+  });
+
+  it("has LLM-guiding description mentioning Canvas and coordinates", () => {
+    const tools = getRegisteredTools(server);
+    const tool = tools["browser_hover_at"];
+    expect(tool.description).toContain("coordinate");
   });
 });

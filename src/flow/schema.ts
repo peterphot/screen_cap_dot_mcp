@@ -5,8 +5,8 @@
  * Each step has an `action` field (discriminated union) and action-specific params.
  * Steps can have optional `label` for naming screenshots/moments.
  *
- * Supported actions: navigate, click, type, hover, wait, scroll, screenshot,
- * a11y_snapshot, evaluate, sleep.
+ * Supported actions: navigate, click, click_at, type, hover, hover_at, wait,
+ * scroll, screenshot, a11y_snapshot, evaluate, sleep.
  */
 
 import { z } from "zod";
@@ -49,6 +49,20 @@ const HoverStep = z.object({
   ref: z.string().min(1).optional(),
   label: z.string().optional(),
 }).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
+
+const ClickAtStep = z.object({
+  action: z.literal("click_at"),
+  x: z.number().nonnegative(),
+  y: z.number().nonnegative(),
+  label: z.string().optional(),
+});
+
+const HoverAtStep = z.object({
+  action: z.literal("hover_at"),
+  x: z.number().nonnegative(),
+  y: z.number().nonnegative(),
+  label: z.string().optional(),
+});
 
 const WaitSelectorStep = z.object({
   action: z.literal("wait"),
@@ -134,8 +148,10 @@ const SleepStep = z.object({
 export const FlowStepSchema = z.union([
   NavigateStep,
   ClickStep,
+  ClickAtStep,
   TypeStep,
   HoverStep,
+  HoverAtStep,
   WaitStep,
   ScrollStep,
   ScreenshotStep,

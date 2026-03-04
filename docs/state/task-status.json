@@ -1,14 +1,16 @@
 {
-  "feature": "pp-24-smart-wait-aria-selectors",
+  "feature": "pp-27-coordinate-click-hover",
   "tickets": {
     "enabled": false,
     "type": null,
     "team": null,
-    "sourceTicket": "PP-24",
+    "sourceTicket": "PP-27",
     "mapping": {}
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Test: ARIA-based selectors and short-circuit logic in smartWait()" },
-    "T002": { "status": "in_progress", "description": "Implement: Replace selectors and add short-circuit logic in wait-strategies.ts" }
+    "T001": { "status": "complete", "description": "Test + Implement: CDP helpers (clickAtCoordinates, hoverAtCoordinates)" },
+    "T002": { "status": "complete", "description": "Test + Implement: Navigation tools (browser_click_at, browser_hover_at)" },
+    "T003": { "status": "complete", "description": "Test + Implement: Flow schemas (ClickAtStep, HoverAtStep)" },
+    "T004": { "status": "complete", "description": "Test + Implement: Flow runner (click_at, hover_at step handling)" }
   }
 }
