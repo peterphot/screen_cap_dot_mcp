@@ -13,6 +13,7 @@
  * - Bounding box helpers do NOT scroll — used for annotated screenshot overlays
  */
 
+import type { CDPSession } from "puppeteer-core";
 import { ensureCDPSession, ensurePage } from "./browser.js";
 import logger from "./util/logger.js";
 
@@ -263,7 +264,7 @@ export async function getViewportBounds(): Promise<{ width: number; height: numb
 export async function getElementBoundingBox(
   backendNodeId: number,
   viewport?: { width: number; height: number },
-  cdp?: { send: (method: string, params: Record<string, unknown>) => Promise<unknown> },
+  cdp?: CDPSession | { send: (method: string, params: Record<string, unknown>) => Promise<unknown> },
 ): Promise<BoundingBox | null> {
   assertValidNodeId(backendNodeId);
 

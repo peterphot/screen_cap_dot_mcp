@@ -103,7 +103,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_click",
-    "Click an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    "Click an element. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e3'). Alternative: CSS selector.",
     { selector: z.string().optional(), ref: z.string().optional() },
     async ({ selector, ref }) => {
       try {
@@ -126,7 +126,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_type",
-    "Type text into an input field. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    "Type text into an input. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e6'). Alternative: CSS selector.",
     {
       selector: z.string().optional(),
       ref: z.string().optional(),
@@ -154,7 +154,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_hover",
-    "Hover over an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    "Hover over an element. PREFERRED: use `ref` from browser_a11y_snapshot. Alternative: CSS selector.",
     { selector: z.string().optional(), ref: z.string().optional() },
     async ({ selector, ref }) => {
       try {

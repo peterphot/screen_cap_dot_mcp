@@ -123,7 +123,7 @@ export function registerScrollingTools(server: McpServer): void {
 
   server.tool(
     "browser_scroll_to_element",
-    "Scroll a specific element into view. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    "Scroll an element into view. PREFERRED: use `ref` from browser_a11y_snapshot. Alternative: CSS selector.",
     {
       selector: z.string().optional().describe("CSS selector of the element to scroll into view"),
       ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e1')"),

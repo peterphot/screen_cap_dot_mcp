@@ -146,7 +146,7 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_screenshot",
-    "Capture a screenshot of the viewport, full page, or a specific element. Set annotate: true to overlay [eN] ref labels on interactive elements (requires a prior browser_a11y_snapshot call). Returns an image content block that Claude can see.",
+    "Capture a screenshot. Set annotate=true to overlay ref labels from browser_a11y_snapshot on interactive elements.",
     {
       selector: z.string().optional(),
       fullPage: z.boolean().optional(),
@@ -240,7 +240,7 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_a11y_snapshot",
-    'Capture the accessibility tree of the current page. Returns a compact indented text format by default with ref IDs (e.g. [e1]) prominently displayed at the start of each line. Set format: "json" for the full JSON representation. Ref IDs can be used with browser_click, browser_type, browser_scroll_to_element, and browser_hover instead of CSS selectors.',
+    "Capture the accessibility tree as a compact text tree with ref IDs (e.g. [e1], [e2]). Use these refs with browser_click, browser_type, browser_hover, and browser_scroll_to_element. Set format='json' for full JSON output.",
     {
       interestingOnly: z.boolean().optional(),
       format: z.enum(["tree", "json"]).optional(),
