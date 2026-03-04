@@ -682,6 +682,247 @@ describe("FlowValidator", () => {
     });
   });
 
+  // ── Conditional steps (if_visible / if_not_visible) ─────────────────
+
+  describe("conditional steps", () => {
+    it("marks if_visible with selector as 'skip' (condition not validated at this level)", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-skip",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      expect(report.steps[0]).toMatchObject({
+        index: 0,
+        action: "if_visible",
+        status: "skip",
+      });
+    });
+
+    it("marks if_not_visible with selector as 'skip'", async () => {
+      const flow: FlowDefinition = {
+        name: "if-not-visible-skip",
+        steps: [
+          {
+            action: "if_not_visible",
+            selector: ".banner",
+            then: [],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      expect(report.steps[0]).toMatchObject({
+        index: 0,
+        action: "if_not_visible",
+        status: "skip",
+      });
+    });
+
+    it("validates selector-based steps inside then branch", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-then-selector",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [{ action: "click", selector: ".banner .dismiss" }],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      // The conditional step itself + nested step
+      expect(report.steps.length).toBeGreaterThanOrEqual(2);
+      // The nested click step should be validated
+      const nestedStep = report.steps.find((s) => s.action === "click");
+      expect(nestedStep).toBeDefined();
+      expect(nestedStep!.status).toBe("ok");
+    });
+
+    it("validates selector-based steps inside else branch", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-else-selector",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [],
+            else: [{ action: "click", selector: ".fallback-btn" }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      const nestedStep = report.steps.find((s) => s.action === "click");
+      expect(nestedStep).toBeDefined();
+      expect(nestedStep!.status).toBe("ok");
+    });
+
+    it("reports missing selector inside then branch as invalid", async () => {
+      mockPage.waitForSelector
+        .mockRejectedValue(new Error("Timeout"));
+
+      const flow: FlowDefinition = {
+        name: "if-visible-then-missing",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [{ action: "click", selector: ".nonexistent" }],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(false);
+      const nestedStep = report.steps.find((s) => s.action === "click");
+      expect(nestedStep).toBeDefined();
+      expect(nestedStep!.status).toBe("missing");
+    });
+
+    it("validates ref-based steps inside conditional branches", async () => {
+      mockResolveRef.mockReturnValue(42);
+
+      const flow: FlowDefinition = {
+        name: "if-visible-ref-nested",
+        steps: [
+          {
+            action: "if_visible",
+            ref: "e1",
+            then: [{ action: "click", ref: "e2" }],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+    });
+
+    it("validates match-based steps inside conditional branches", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-match-nested",
+        steps: [
+          {
+            action: "if_visible",
+            match: { role: "dialog" },
+            then: [{ action: "click", match: { role: "button", name: "Accept" } }],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+    });
+
+    it("validates nested conditional steps recursively", async () => {
+      const flow: FlowDefinition = {
+        name: "nested-conditionals",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".outer",
+            then: [
+              {
+                action: "if_visible",
+                selector: ".inner",
+                then: [{ action: "click", selector: ".inner .btn" }],
+                else: [],
+              },
+            ],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      // Should have at least 3 results: outer if_visible, inner if_visible, inner click
+      expect(report.steps.length).toBeGreaterThanOrEqual(3);
+      const clickStep = report.steps.find((s) => s.action === "click");
+      expect(clickStep).toBeDefined();
+      expect(clickStep!.status).toBe("ok");
+    });
+
+    it("validates non-targetable steps inside conditional branches as skip", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-non-targetable",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [
+              { action: "navigate", url: "https://example.com" },
+              { action: "sleep", duration: 1000 },
+            ],
+            else: [],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      const navStep = report.steps.find((s) => s.action === "navigate");
+      expect(navStep).toBeDefined();
+      expect(navStep!.status).toBe("skip");
+    });
+
+    it("reports steps from both then and else branches in the validation report", async () => {
+      const flow: FlowDefinition = {
+        name: "if-visible-both-branches",
+        steps: [
+          {
+            action: "if_visible",
+            selector: ".banner",
+            then: [{ action: "click", selector: ".btn-a" }],
+            else: [{ action: "click", selector: ".btn-b" }],
+          },
+        ],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      // Should include: if_visible (skip) + 2 nested clicks (ok)
+      expect(report.steps.length).toBeGreaterThanOrEqual(3);
+      expect(report.valid).toBe(true);
+    });
+  });
+
   // ── No actions executed ─────────────────────────────────────────────
 
   describe("no actions executed", () => {

@@ -22,11 +22,12 @@ import { ensurePage, DEFAULT_TIMEOUT_MS } from "../browser.js";
 import { smartWait } from "../util/wait-strategies.js";
 import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
+import { DEFAULT_VISIBILITY_TIMEOUT_MS } from "./schema.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
-import { clearRefs } from "../ref-store.js";
+import { clearRefs, resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
@@ -317,7 +318,90 @@ export class FlowRunner {
       case "sleep":
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
+
+      case "if_visible":
+      case "if_not_visible": {
+        const isVisible = await this.checkVisibility(page, step, cachedSnapshot);
+        const conditionMet = step.action === "if_visible" ? isVisible : !isVisible;
+        const branch = conditionMet ? step.then : step.else;
+
+        // Cache a single snapshot for the branch if any nested steps use match
+        // SAFETY: Zod schema validates then/else as arrays of valid FlowStep objects
+        const branchSteps = branch as FlowStep[];
+        let branchSnapshot = cachedSnapshot;
+        if (!branchSnapshot) {
+          const hasMatch = branchSteps.some((s) => "match" in s && (s as Record<string, unknown>).match);
+          if (hasMatch) {
+            const snap = await page.accessibility.snapshot({ interestingOnly: false });
+            if (snap) branchSnapshot = snap as A11ySnapshotNode;
+          }
+        }
+
+        // Nested steps use fail-fast semantics: an error in a nested step
+        // propagates up and fails the entire conditional step.
+        for (let j = 0; j < branchSteps.length; j++) {
+          const nestedStep = branchSteps[j];
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot);
+          // Invalidate snapshot after any step that mutates the page
+          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "hover", "hover_at"].includes(nestedStep.action)) {
+            branchSnapshot = undefined;
+          }
+          // Re-fetch snapshot if invalidated and remaining steps use match
+          if (!branchSnapshot && j < branchSteps.length - 1) {
+            const remaining = branchSteps.slice(j + 1);
+            const needsMatch = remaining.some((s) => "match" in s && (s as Record<string, unknown>).match);
+            if (needsMatch) {
+              const snap = await page.accessibility.snapshot({ interestingOnly: false });
+              if (snap) branchSnapshot = snap as A11ySnapshotNode;
+            }
+          }
+        }
+        break;
+      }
     }
+  }
+
+  // ── Conditional visibility check ────────────────────────────────────
+
+  /**
+   * Check whether the condition target is "visible":
+   * - selector: uses waitForSelector with short timeout (actual DOM visibility check)
+   * - ref: checks if the ref is registered (does NOT verify current DOM visibility)
+   * - match: uses resolveMatch against a11y tree (actual a11y tree check)
+   */
+  private async checkVisibility(
+    page: Page,
+    step: { selector?: string; ref?: string; match?: { role?: string; name?: string; index?: number }; timeout?: number },
+    cachedSnapshot?: A11ySnapshotNode,
+  ): Promise<boolean> {
+    const timeout = step.timeout ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
+
+    if (step.selector) {
+      try {
+        await page.waitForSelector(step.selector, { visible: true, timeout });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    if (step.ref) {
+      const backendNodeId = resolveRef(step.ref);
+      return backendNodeId !== undefined;
+    }
+
+    if (step.match) {
+      try {
+        const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
+        await resolveMatch(step.match, opts);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Should not happen with validated schema
+    return false;
   }
 
   private async executeWait(

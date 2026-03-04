@@ -6,7 +6,7 @@
  * Steps can have optional `label` for naming screenshots/moments.
  *
  * Supported actions: navigate, click, click_at, type, hover, hover_at, press_key,
- * wait, scroll, screenshot, a11y_snapshot, evaluate, sleep.
+ * wait, scroll, screenshot, a11y_snapshot, evaluate, sleep, if_visible, if_not_visible.
  *
  * Element targeting: click, type, and hover steps accept exactly one of:
  * - `selector` (CSS selector)
@@ -185,23 +185,74 @@ const SleepStep = z.object({
   label: z.string().optional(),
 });
 
+// ── Conditional step nesting depth limit ─────────────────────────────────
+
+/** Maximum allowed nesting depth for conditional steps (if_visible, if_not_visible). */
+export const MAX_CONDITIONAL_DEPTH = 3;
+
+/** Default timeout in ms for conditional visibility checks. */
+export const DEFAULT_VISIBILITY_TIMEOUT_MS = 2000;
+
+// ── Conditional step factory ─────────────────────────────────────────────
+
+function buildConditionalStep(
+  action: "if_visible" | "if_not_visible",
+  nestedStepSchema: z.ZodType,
+) {
+  return z.object({
+    action: z.literal(action),
+    selector: z.string().min(1).optional(),
+    ref: z.string().min(1).optional(),
+    match: MatchSelectorSchema.optional(),
+    timeout: z.number().nonnegative().finite().max(300_000).optional(),
+    label: z.string().optional(),
+    then: z.array(nestedStepSchema).max(500),
+    else: z.array(nestedStepSchema).max(500),
+  }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
+}
+
 // ── Discriminated union of all steps ─────────────────────────────────────
 
-export const FlowStepSchema = z.union([
-  NavigateStep,
-  ClickStep,
-  ClickAtStep,
-  TypeStep,
-  HoverStep,
-  HoverAtStep,
-  PressKeyStep,
-  WaitStep,
-  ScrollStep,
-  ScreenshotStep,
-  A11ySnapshotStep,
-  EvaluateStep,
-  SleepStep,
-]);
+// Returns z.ZodType (widest Zod base type) because recursive construction erases
+// the specific union type. FlowStep inferred type may be wide — schema validation
+// ensures correctness at runtime.
+/**
+ * Build a FlowStepSchema that supports conditional branching up to the given depth.
+ * Uses recursive construction (not z.lazy) so depth is statically bounded.
+ */
+function buildFlowStepSchema(depth: number): z.ZodType {
+  // Base (non-conditional) steps — always available
+  const baseSteps = [
+    NavigateStep,
+    ClickStep,
+    ClickAtStep,
+    TypeStep,
+    HoverStep,
+    HoverAtStep,
+    PressKeyStep,
+    WaitStep,
+    ScrollStep,
+    ScreenshotStep,
+    A11ySnapshotStep,
+    EvaluateStep,
+    SleepStep,
+  ] as const;
+
+  if (depth <= 0) {
+    // At max depth, no more conditionals allowed
+    return z.union(baseSteps);
+  }
+
+  // Recursive step schema for nested then/else arrays
+  const nestedStepSchema = buildFlowStepSchema(depth - 1);
+
+  const IfVisibleStep = buildConditionalStep("if_visible", nestedStepSchema);
+  const IfNotVisibleStep = buildConditionalStep("if_not_visible", nestedStepSchema);
+
+  return z.union([...baseSteps, IfVisibleStep, IfNotVisibleStep]);
+}
+
+export const FlowStepSchema = buildFlowStepSchema(MAX_CONDITIONAL_DEPTH);
 
 export type FlowStep = z.infer<typeof FlowStepSchema>;
 
