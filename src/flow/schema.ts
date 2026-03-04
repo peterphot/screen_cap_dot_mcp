@@ -6,7 +6,7 @@
  * Steps can have optional `label` for naming screenshots/moments.
  *
  * Supported actions: navigate, click, click_at, type, hover, hover_at, press_key,
- * wait, scroll, scroll_to_text, screenshot, a11y_snapshot, evaluate, sleep, if_visible, if_not_visible.
+ * wait, scroll, scroll_to_text, screenshot, a11y_snapshot, evaluate, sleep, if_visible, if_not_visible, group.
  *
  * Element targeting: click, type, and hover steps accept exactly one of:
  * - `selector` (CSS selector)
@@ -196,10 +196,13 @@ const ScrollToTextStep = z.object({
   label: z.string().optional(),
 });
 
-// ── Conditional step nesting depth limit ─────────────────────────────────
+// ── Nesting depth limits ─────────────────────────────────────────────────
 
 /** Maximum allowed nesting depth for conditional steps (if_visible, if_not_visible). */
 export const MAX_CONDITIONAL_DEPTH = 3;
+
+/** Maximum allowed nesting depth for group steps. */
+export const MAX_GROUP_DEPTH = 2;
 
 /** Default timeout in ms for conditional visibility checks. */
 export const DEFAULT_VISIBILITY_TIMEOUT_MS = 2000;
@@ -222,17 +225,32 @@ function buildConditionalStep(
   }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 }
 
+// ── Group step factory ──────────────────────────────────────────────────
+
+function buildGroupStep(nestedStepSchema: z.ZodType) {
+  return z.object({
+    action: z.literal("group"),
+    name: z.string().min(1).max(200),
+    label: z.string().optional(),
+    steps: z.array(nestedStepSchema).min(1).max(500),
+  });
+}
+
 // ── Discriminated union of all steps ─────────────────────────────────────
 
 // Returns z.ZodType (widest Zod base type) because recursive construction erases
 // the specific union type. FlowStep inferred type may be wide — schema validation
 // ensures correctness at runtime.
 /**
- * Build a FlowStepSchema that supports conditional branching up to the given depth.
+ * Build a FlowStepSchema that supports conditional branching and group nesting
+ * up to their respective depth limits.
  * Uses recursive construction (not z.lazy) so depth is statically bounded.
+ *
+ * @param conditionalDepth - Remaining depth for conditional (if_visible/if_not_visible) nesting
+ * @param groupDepth - Remaining depth for group nesting
  */
-function buildFlowStepSchema(depth: number): z.ZodType {
-  // Base (non-conditional) steps — always available
+function buildFlowStepSchema(conditionalDepth: number, groupDepth: number): z.ZodType {
+  // Base (non-conditional, non-group) steps — always available
   const baseSteps = [
     NavigateStep,
     ClickStep,
@@ -250,21 +268,26 @@ function buildFlowStepSchema(depth: number): z.ZodType {
     ScrollToTextStep,
   ] as const;
 
-  if (depth <= 0) {
-    // At max depth, no more conditionals allowed
-    return z.union(baseSteps);
+  const nestableSteps: z.ZodType[] = [...baseSteps];
+
+  if (conditionalDepth > 0) {
+    const nestedForConditionals = buildFlowStepSchema(conditionalDepth - 1, groupDepth);
+    nestableSteps.push(buildConditionalStep("if_visible", nestedForConditionals));
+    nestableSteps.push(buildConditionalStep("if_not_visible", nestedForConditionals));
   }
 
-  // Recursive step schema for nested then/else arrays
-  const nestedStepSchema = buildFlowStepSchema(depth - 1);
+  if (groupDepth > 0) {
+    const nestedForGroups = buildFlowStepSchema(conditionalDepth, groupDepth - 1);
+    nestableSteps.push(buildGroupStep(nestedForGroups));
+  }
 
-  const IfVisibleStep = buildConditionalStep("if_visible", nestedStepSchema);
-  const IfNotVisibleStep = buildConditionalStep("if_not_visible", nestedStepSchema);
-
-  return z.union([...baseSteps, IfVisibleStep, IfNotVisibleStep]);
+  if (nestableSteps.length <= 1) {
+    return nestableSteps[0];
+  }
+  return z.union(nestableSteps as [z.ZodType, z.ZodType, ...z.ZodType[]]);
 }
 
-export const FlowStepSchema = buildFlowStepSchema(MAX_CONDITIONAL_DEPTH);
+export const FlowStepSchema = buildFlowStepSchema(MAX_CONDITIONAL_DEPTH, MAX_GROUP_DEPTH);
 
 export type FlowStep = z.infer<typeof FlowStepSchema>;
 

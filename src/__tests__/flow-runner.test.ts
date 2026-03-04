@@ -1785,3 +1785,174 @@ describe("scroll_to_text steps", () => {
     expect(result.steps[1].success).toBe(true);
   });
 });
+
+// ── group steps ────────────────────────────────────────────────────────────
+
+describe("group steps", () => {
+  const runner = new FlowRunner();
+
+  it("executes nested steps within a group", async () => {
+    const flow: FlowDefinition = {
+      name: "group-basic",
+      steps: [
+        {
+          action: "group",
+          name: "Filter Interactions",
+          steps: [
+            { action: "click", selector: "#filter" },
+            { action: "sleep", duration: 100 },
+          ],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("group");
+    expect(mockPage.click).toHaveBeenCalledWith("#filter");
+  });
+
+  it("marks group step as failed if any nested step fails", async () => {
+    mockPage.click.mockRejectedValueOnce(new Error("Element not found"));
+
+    const flow: FlowDefinition = {
+      name: "group-nested-fail",
+      steps: [
+        {
+          action: "group",
+          name: "Failing Group",
+          steps: [
+            { action: "click", selector: ".nonexistent" },
+            { action: "sleep", duration: 100 },
+          ],
+        },
+        { action: "navigate", url: "https://example.com" },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    // Group step itself should report failure since a nested step failed
+    expect(result.steps[0].success).toBe(false);
+    // The second step should still execute (continue on error)
+    expect(result.steps[1].success).toBe(true);
+  });
+
+  it("reports group name in step result label", async () => {
+    const flow: FlowDefinition = {
+      name: "group-with-label",
+      steps: [
+        {
+          action: "group",
+          name: "Setup Steps",
+          label: "setup-section",
+          steps: [{ action: "sleep", duration: 100 }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].label).toBe("setup-section");
+  });
+
+  it("executes nested groups (depth 2)", async () => {
+    const flow: FlowDefinition = {
+      name: "nested-groups",
+      steps: [
+        {
+          action: "group",
+          name: "Outer Group",
+          steps: [
+            {
+              action: "group",
+              name: "Inner Group",
+              steps: [{ action: "click", selector: ".btn" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.click).toHaveBeenCalledWith(".btn");
+  });
+
+  it("continues flow after group step failure", async () => {
+    mockPage.click.mockRejectedValueOnce(new Error("Click failed"));
+
+    const flow: FlowDefinition = {
+      name: "group-continue-after-fail",
+      steps: [
+        {
+          action: "group",
+          name: "Failing Group",
+          steps: [{ action: "click", selector: ".bad" }],
+        },
+        { action: "sleep", duration: 100 },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[1].success).toBe(true);
+  });
+
+  it("includes group name in manifest output", async () => {
+    const flow: FlowDefinition = {
+      name: "group-manifest",
+      steps: [
+        {
+          action: "group",
+          name: "Data Entry",
+          steps: [{ action: "sleep", duration: 100 }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    // Verify the manifest was written containing group info
+    const manifestCall = mockSafeWriteFile.mock.calls.find(
+      (call: unknown[]) => String(call[0]).includes("manifest.json"),
+    );
+    expect(manifestCall).toBeDefined();
+    const manifest = JSON.parse(manifestCall![1] as string);
+    expect(manifest.steps[0].action).toBe("group");
+  });
+
+  it("executes a group containing conditional steps", async () => {
+    mockPage.waitForSelector.mockResolvedValue({});
+
+    const flow: FlowDefinition = {
+      name: "group-with-conditional",
+      steps: [
+        {
+          action: "group",
+          name: "Conditional Group",
+          steps: [
+            {
+              action: "if_visible",
+              selector: ".banner",
+              then: [{ action: "click", selector: ".banner .dismiss" }],
+              else: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockPage.click).toHaveBeenCalledWith(".banner .dismiss");
+  });
+});

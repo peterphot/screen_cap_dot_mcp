@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { FlowDefinitionSchema, FlowStepSchema, RecordingConfigSchema, MAX_CONDITIONAL_DEPTH } from "../flow/schema.js";
+import { FlowDefinitionSchema, FlowStepSchema, RecordingConfigSchema, MAX_CONDITIONAL_DEPTH, MAX_GROUP_DEPTH } from "../flow/schema.js";
 
 describe("FlowStepSchema", () => {
   it("validates a navigate step", () => {
@@ -1121,6 +1121,152 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+  // ── group step ─────────────────────────────────────────────────────
+
+  it("validates a group step with name and steps", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Filter Interactions",
+      steps: [
+        { action: "click", selector: "#filter" },
+        { action: "sleep", duration: 1500 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a group step with optional label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Setup Steps",
+      label: "setup-section",
+      steps: [{ action: "navigate", url: "https://example.com" }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a group step without name", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      steps: [{ action: "sleep", duration: 1000 }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a group step without steps array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Missing Steps",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a group step with empty steps array", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Empty Group",
+      steps: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a group step with name exceeding 200 chars", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "A".repeat(201),
+      steps: [{ action: "sleep", duration: 1000 }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a group step with name at max length (200 chars)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "A".repeat(200),
+      steps: [{ action: "sleep", duration: 1000 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a group step with invalid nested step", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Bad Group",
+      steps: [{ action: "invalid_action" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a group step containing a conditional step", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Conditional Group",
+      steps: [
+        {
+          action: "if_visible",
+          selector: ".banner",
+          then: [{ action: "click", selector: ".banner .dismiss" }],
+          else: [],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates nested groups (depth 2)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Outer Group",
+      steps: [
+        {
+          action: "group",
+          name: "Inner Group",
+          steps: [{ action: "sleep", duration: 500 }],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects nested groups exceeding max depth (depth 3)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Level 1",
+      steps: [
+        {
+          action: "group",
+          name: "Level 2",
+          steps: [
+            {
+              action: "group",
+              name: "Level 3",
+              steps: [{ action: "sleep", duration: 500 }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("exports MAX_GROUP_DEPTH constant equal to 2", () => {
+    expect(MAX_GROUP_DEPTH).toBe(2);
+  });
+
+  it("validates a group step with multiple nested steps", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "group",
+      name: "Multi-step Group",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        { action: "click", selector: ".btn" },
+        { action: "screenshot", label: "after-click" },
+        { action: "sleep", duration: 1000 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
 });  // end describe("FlowStepSchema")
 
 describe("RecordingConfigSchema", () => {
@@ -1266,6 +1412,25 @@ describe("FlowDefinitionSchema", () => {
         { action: "wait", strategy: "smart" },
         { action: "type", match: { role: "textbox", name: "Search" }, text: "revenue", label: "search" },
         { action: "hover", match: { role: "button", name: "Column", index: 0 }, label: "hover-column" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a flow with group step", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "grouped-flow",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        {
+          action: "group",
+          name: "Filter Interactions",
+          steps: [
+            { action: "click", selector: "#filter" },
+            { action: "sleep", duration: 1500 },
+          ],
+        },
+        { action: "screenshot", label: "after-filter" },
       ],
     });
     expect(result.success).toBe(true);

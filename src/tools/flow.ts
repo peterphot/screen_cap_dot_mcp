@@ -171,20 +171,21 @@ export function registerFlowTools(server: McpServer): void {
 
   server.tool(
     "browser_run_flow",
-    "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config.",
+    "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config. Use 'section' to run only a specific named group.",
     {
       name: z.string().optional().describe("Name of a saved flow to load from flows/ directory"),
       flow: z.unknown().optional().describe("Inline flow definition object (alternative to name)"),
       record: z.boolean().optional().describe("Override recording config (true to record, false to skip)"),
+      section: z.string().optional().describe("Name of a specific group to run (only that section will be executed)"),
     },
-    async ({ name, flow, record }) => {
+    async ({ name, flow, record, section }) => {
       try {
         const loaded = await loadFlowDefinition(name, flow);
         if (isErrorResult(loaded)) return loaded;
         const definition = loaded;
 
         const runner = new FlowRunner();
-        const result = await runner.run(definition, record);
+        const result = await runner.run(definition, record, section);
 
         const successCount = result.steps.filter((s) => s.success).length;
         const failCount = result.steps.length - successCount;

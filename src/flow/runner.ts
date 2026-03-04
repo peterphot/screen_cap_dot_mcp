@@ -78,9 +78,10 @@ export class FlowRunner {
    *
    * @param flow - Validated flow definition
    * @param recordOverride - Override the flow's recording config (true/false)
+   * @param section - If provided, only execute the named group section
    * @returns Results with step outcomes and artifact paths
    */
-  async run(flow: FlowDefinition, recordOverride?: boolean): Promise<FlowRunResult> {
+  async run(flow: FlowDefinition, recordOverride?: boolean, section?: string): Promise<FlowRunResult> {
     const runStart = Date.now();
     const page = await ensurePage();
 
@@ -112,11 +113,24 @@ export class FlowRunner {
       logger.info(`Recording started: ${recordingPath}`);
     }
 
+    // Determine which steps to execute (optionally filter by section)
+    let stepsToExecute = flow.steps;
+    if (section) {
+      const groupStep = flow.steps.find(
+        (s) => s.action === "group" && "name" in s && (s as Record<string, unknown>).name === section,
+      );
+      if (!groupStep) {
+        throw new Error(`Section "${section}" not found in flow "${flow.name}".`);
+      }
+      stepsToExecute = [groupStep];
+      logger.info(`Running only section "${section}"`);
+    }
+
     // Execute steps
     const stepResults: StepResult[] = [];
 
-    for (let i = 0; i < flow.steps.length; i++) {
-      const step = flow.steps[i];
+    for (let i = 0; i < stepsToExecute.length; i++) {
+      const step = stepsToExecute[i];
       const stepStart = Date.now();
       const result: StepResult = {
         stepIndex: i,
@@ -332,6 +346,39 @@ export class FlowRunner {
       case "sleep":
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
+
+      case "group": {
+        logger.info(`Group "${step.name}" started`);
+        const groupSteps = step.steps as FlowStep[];
+        let groupSnapshot = cachedSnapshot;
+        if (!groupSnapshot) {
+          const hasMatch = groupSteps.some((s) => "match" in s && (s as Record<string, unknown>).match);
+          if (hasMatch) {
+            const snap = await page.accessibility.snapshot({ interestingOnly: false });
+            if (snap) groupSnapshot = snap as A11ySnapshotNode;
+          }
+        }
+
+        for (let j = 0; j < groupSteps.length; j++) {
+          const nestedStep = groupSteps[j];
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, groupSnapshot, shouldAnimate);
+          // Invalidate snapshot after any step that mutates the page
+          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
+            groupSnapshot = undefined;
+          }
+          // Re-fetch snapshot if invalidated and remaining steps use match
+          if (!groupSnapshot && j < groupSteps.length - 1) {
+            const remaining = groupSteps.slice(j + 1);
+            const needsMatch = remaining.some((s) => "match" in s && (s as Record<string, unknown>).match);
+            if (needsMatch) {
+              const snap = await page.accessibility.snapshot({ interestingOnly: false });
+              if (snap) groupSnapshot = snap as A11ySnapshotNode;
+            }
+          }
+        }
+        logger.info(`Group "${step.name}" completed`);
+        break;
+      }
 
       case "if_visible":
       case "if_not_visible": {
