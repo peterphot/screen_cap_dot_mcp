@@ -323,6 +323,35 @@ export class FlowRunner {
         await page.evaluate(step.script);
         break;
 
+      case "scroll_to_text": {
+        const searchText = step.text.toLowerCase();
+        const found = await page.evaluate(
+          (text: string) => {
+            // Walk all text nodes looking for a case-insensitive partial match
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node: Node | null;
+            while ((node = walker.nextNode())) {
+              const content = node.textContent ?? "";
+              if (content.toLowerCase().includes(text)) {
+                const el = node.parentElement;
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  return true;
+                }
+              }
+            }
+            return false;
+          },
+          searchText,
+        );
+        if (!found) {
+          throw new Error(`Text "${step.text}" not found on page`);
+        }
+        // Brief settle time for smooth scroll to complete
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        break;
+      }
+
       case "sleep":
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
@@ -351,7 +380,7 @@ export class FlowRunner {
           const nestedStep = branchSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
-          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "hover", "hover_at"].includes(nestedStep.action)) {
+          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
             branchSnapshot = undefined;
           }
           // Re-fetch snapshot if invalidated and remaining steps use match

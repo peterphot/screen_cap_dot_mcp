@@ -1698,3 +1698,90 @@ describe("animation during recording", () => {
     expect(mockClickAtCoordinates).toHaveBeenCalledWith(100, 200, undefined);
   });
 });
+
+// ── scroll_to_text steps ─────────────────────────────────────────────────
+
+describe("scroll_to_text steps", () => {
+  const runner = new FlowRunner();
+
+  it("executes scroll_to_text step via page.evaluate", async () => {
+    // page.evaluate returns true when text is found
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const flow: FlowDefinition = {
+      name: "scroll-to-text-test",
+      steps: [{ action: "scroll_to_text", text: "Insights Table" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].action).toBe("scroll_to_text");
+    expect(mockPage.evaluate).toHaveBeenCalled();
+    // The evaluate call should receive the text string as an argument
+    const callArgs = mockPage.evaluate.mock.calls[0];
+    expect(callArgs[1]).toBe("insights table"); // case-insensitive: lowered
+  });
+
+  it("fails when text is not found on the page", async () => {
+    // page.evaluate returns false when text is not found
+    mockPage.evaluate.mockResolvedValueOnce(false);
+
+    const flow: FlowDefinition = {
+      name: "scroll-to-text-not-found",
+      steps: [{ action: "scroll_to_text", text: "Nonexistent Section" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Nonexistent Section");
+  });
+
+  it("captures error when page.evaluate throws", async () => {
+    mockPage.evaluate.mockRejectedValueOnce(new Error("Page context destroyed"));
+
+    const flow: FlowDefinition = {
+      name: "scroll-to-text-error",
+      steps: [{ action: "scroll_to_text", text: "Some text" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("Page context destroyed");
+  });
+
+  it("captures artifacts for labeled scroll_to_text step", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const flow: FlowDefinition = {
+      name: "scroll-to-text-labeled",
+      steps: [{ action: "scroll_to_text", text: "Revenue", label: "find-revenue" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(result.steps[0].label).toBe("find-revenue");
+    expect(result.steps[0].screenshotPath).toContain("find-revenue");
+  });
+
+  it("continues executing after scroll_to_text failure", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(false);
+
+    const flow: FlowDefinition = {
+      name: "scroll-to-text-continue",
+      steps: [
+        { action: "scroll_to_text", text: "Missing" },
+        { action: "navigate", url: "https://example.com" },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[1].success).toBe(true);
+  });
+});
