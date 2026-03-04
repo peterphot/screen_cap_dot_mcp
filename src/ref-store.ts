@@ -54,3 +54,31 @@ export function resolveRef(ref: string): number | undefined {
 export function hasRefs(): boolean {
   return refs.size > 0;
 }
+
+// ── Metadata types ──────────────────────────────────────────────────
+
+/** Rich metadata for a ref. Currently contains backendNodeId;
+ *  will be extended with bounding box data for annotated screenshots. */
+export interface RefMetadata {
+  backendNodeId: number;
+}
+
+// ── Metadata API ────────────────────────────────────────────────────
+
+/**
+ * Resolve a ref string to its metadata.
+ * Returns `undefined` if the ref is stale or was never allocated.
+ */
+export function resolveRefMetadata(ref: string): RefMetadata | undefined {
+  const backendNodeId = refs.get(ref);
+  if (backendNodeId === undefined) return undefined;
+  return { backendNodeId };
+}
+
+/**
+ * Return a snapshot (shallow copy) of all ref mappings.
+ * Mutations to the returned map do not affect the internal store.
+ */
+export function getAllRefs(): Map<string, number> {
+  return new Map(refs);
+}
