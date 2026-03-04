@@ -1,9 +1,9 @@
 {
-  "feature": "pp-22-ref-metadata-bounding-boxes",
+  "feature": "pp-24-smart-wait-aria-selectors",
   "phase": "BUILD",
-  "currentTask": "T004",
-  "status": "complete",
-  "lastUpdated": "2026-03-04T03:31:00Z",
+  "currentTask": "T002",
+  "status": "in_progress",
+  "lastUpdated": "2026-03-04T04:05:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-22"
+  "sourceTicket": "PP-24"
 }

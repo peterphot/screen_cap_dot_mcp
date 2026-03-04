@@ -1,15 +1,15 @@
-# Decision Log: PP-24 smart-wait-aria-selectors
-_Initialized: 2026-03-04T04:00:00Z_
+# Decision Log: PP-23 annotated-screenshot
+_Initialized: 2026-03-04T03:46:00Z_
 
 ## Orchestrate Phase
-_Captured: 2026-03-04T04:00:00Z_
+_Captured: 2026-03-04T03:46:00Z_
 
 ### D-ORCH-001: Scale assessment: SMALL
 - **Who decided**: claude
 - **What**: Scale assessment is SMALL (2 tasks: tests + implementation)
-- **Why**: The ticket modifies one production file and one test file. Clear acceptance criteria with exact code provided.
+- **Why**: The ticket is tightly scoped to a single tool modification with clear acceptance criteria. PP-22 is already merged.
 - **Alternatives**: MEDIUM would be overkill for a single-file modification
-- **Context**: Ticket PP-24 replaces selectors in wait-strategies.ts and adds short-circuit logic
+- **Context**: Ticket PP-23 modifies one production file and one test file
 
 ### D-ORCH-002: Orchestration pattern: STANDARD
 - **Who decided**: claude
@@ -21,6 +21,6 @@ _Captured: 2026-03-04T04:00:00Z_
 ### D-ORCH-003: Skip CLARIFY phase per user instruction
 - **Who decided**: user
 - **What**: Skip the full clarify workflow and use reasonable defaults from the ticket
-- **Why**: User explicitly said "Use reasonable defaults for any ambiguities"
+- **Why**: User explicitly said "When you have clarifying questions, use reasonable defaults based on the ticket description"
 - **Alternatives**: Full clarify workflow with user Q&A
-- **Context**: Ticket PP-24 is extremely well-specified with implementation details, exact code, file paths, and acceptance criteria
+- **Context**: Ticket PP-23 is extremely well-specified with implementation details, file paths, and acceptance criteria

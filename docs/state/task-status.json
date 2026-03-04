@@ -1,16 +1,14 @@
 {
-  "feature": "pp-22-ref-metadata-bounding-boxes",
+  "feature": "pp-24-smart-wait-aria-selectors",
   "tickets": {
     "enabled": false,
     "type": null,
     "team": null,
-    "sourceTicket": "PP-22",
+    "sourceTicket": "PP-24",
     "mapping": {}
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Test: ref-store resolveRefMetadata and getAllRefs" },
-    "T002": { "status": "complete", "description": "Implement: resolveRefMetadata and getAllRefs in ref-store" },
-    "T003": { "status": "complete", "description": "Test: cdp-helpers bounding box functions" },
-    "T004": { "status": "complete", "description": "Implement: bounding box functions in cdp-helpers" }
+    "T001": { "status": "complete", "description": "Test: ARIA-based selectors and short-circuit logic in smartWait()" },
+    "T002": { "status": "in_progress", "description": "Implement: Replace selectors and add short-circuit logic in wait-strategies.ts" }
   }
 }
