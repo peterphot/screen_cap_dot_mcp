@@ -14,6 +14,7 @@
  */
 
 import { ensureCDPSession, ensurePage } from "./browser.js";
+import logger from "./util/logger.js";
 
 /** CDP modifier flag for the Control key. */
 export const CTRL_MODIFIER = 2;
@@ -220,6 +221,9 @@ export interface BoundingBox {
  * Returns the axis-aligned bounding rectangle enclosing all 4 corners.
  */
 function quadToBoundingBox(quad: number[]): BoundingBox {
+  if (quad.length < 8) {
+    throw new Error(`Expected quad with 8 values, got ${quad.length}`);
+  }
   const xs = [quad[0], quad[2], quad[4], quad[6]];
   const ys = [quad[1], quad[3], quad[5], quad[7]];
 
@@ -256,10 +260,11 @@ export async function getViewportBounds(): Promise<{ width: number; height: numb
  */
 export async function getElementBoundingBox(
   backendNodeId: number,
+  viewport?: { width: number; height: number },
 ): Promise<BoundingBox | null> {
   assertValidNodeId(backendNodeId);
 
-  const viewport = await getViewportBounds();
+  const vp = viewport ?? (await getViewportBounds());
 
   let quads: number[][];
   try {
@@ -268,7 +273,8 @@ export async function getElementBoundingBox(
       backendNodeId,
     })) as { quads?: number[][] };
     quads = result.quads ?? [];
-  } catch {
+  } catch (err) {
+    logger.debug(`getElementBoundingBox failed for node ${backendNodeId}: ${err}`);
     return null;
   }
 
@@ -282,8 +288,8 @@ export async function getElementBoundingBox(
   if (
     box.x + box.width <= 0 ||
     box.y + box.height <= 0 ||
-    box.x >= viewport.width ||
-    box.y >= viewport.height
+    box.x >= vp.width ||
+    box.y >= vp.height
   ) {
     return null;
   }
@@ -291,28 +297,53 @@ export async function getElementBoundingBox(
   return box;
 }
 
+/** Maximum number of elements per batch call. */
+const MAX_BATCH_SIZE = 500;
+
+/** Maximum concurrent CDP calls within a batch. */
+const BATCH_CONCURRENCY = 20;
+
 /**
  * Get bounding boxes for multiple elements in parallel.
  *
- * Uses Promise.allSettled() so that failures for individual elements
- * don't prevent results for others. Failed or off-screen elements map to `null`.
+ * Fetches the viewport once and passes it to each element lookup.
+ * Work is chunked into groups of BATCH_CONCURRENCY to avoid overwhelming
+ * the CDP session. Failed or off-screen elements map to `null`.
  *
+ * @throws RangeError if more than MAX_BATCH_SIZE IDs are provided
  * @returns Map from backendNodeId to bounding box (or null)
  */
 export async function batchGetBoundingBoxes(
   backendNodeIds: number[],
 ): Promise<Map<number, BoundingBox | null>> {
-  const results = await Promise.allSettled(
-    backendNodeIds.map((id) => getElementBoundingBox(id)),
-  );
-
-  const map = new Map<number, BoundingBox | null>();
-  for (let i = 0; i < backendNodeIds.length; i++) {
-    const result = results[i];
-    map.set(
-      backendNodeIds[i],
-      result.status === "fulfilled" ? result.value : null,
+  if (backendNodeIds.length > MAX_BATCH_SIZE) {
+    throw new RangeError(
+      `Batch size ${backendNodeIds.length} exceeds maximum of ${MAX_BATCH_SIZE}`,
     );
+  }
+
+  const uniqueIds = [...new Set(backendNodeIds)];
+  const map = new Map<number, BoundingBox | null>();
+
+  if (uniqueIds.length === 0) {
+    return map;
+  }
+
+  const viewport = await getViewportBounds();
+
+  for (let i = 0; i < uniqueIds.length; i += BATCH_CONCURRENCY) {
+    const chunk = uniqueIds.slice(i, i + BATCH_CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map((id) => getElementBoundingBox(id, viewport)),
+    );
+
+    for (let j = 0; j < chunk.length; j++) {
+      const result = results[j];
+      map.set(
+        chunk[j],
+        result.status === "fulfilled" ? result.value : null,
+      );
+    }
   }
 
   return map;

@@ -33,6 +33,10 @@ vi.mock("../browser.js", () => ({
   ensurePage: vi.fn().mockResolvedValue({ evaluate: mockEvaluate }),
 }));
 
+vi.mock("../util/logger.js", () => ({
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 import {
   getElementCenter,
   clickByBackendNodeId,
@@ -315,6 +319,12 @@ describe("getViewportBounds", () => {
 
     expect(bounds).toEqual({ width: 1280, height: 720 });
   });
+
+  it("throws when page.evaluate fails", async () => {
+    mockEvaluate.mockRejectedValueOnce(new Error("page crashed"));
+
+    await expect(getViewportBounds()).rejects.toThrow("page crashed");
+  });
 });
 
 // ── getElementBoundingBox() ─────────────────────────────────────────────
@@ -440,14 +450,13 @@ describe("getElementBoundingBox", () => {
 
 describe("batchGetBoundingBoxes", () => {
   it("returns bounding boxes for multiple elements in parallel", async () => {
-    // Each call to getElementBoundingBox calls getViewportBounds + getContentQuads
-    // Node 10: visible element
+    // Viewport fetched once at batch level
     mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
+    // Node 10: visible element
     mockSend.mockResolvedValueOnce({
       quads: [[0, 0, 100, 0, 100, 50, 0, 50]],
     });
     // Node 20: visible element
-    mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
     mockSend.mockResolvedValueOnce({
       quads: [[200, 200, 400, 200, 400, 300, 200, 300]],
     });
@@ -457,19 +466,20 @@ describe("batchGetBoundingBoxes", () => {
     expect(result).toBeInstanceOf(Map);
     expect(result.get(10)).toEqual({ x: 0, y: 0, width: 100, height: 50 });
     expect(result.get(20)).toEqual({ x: 200, y: 200, width: 200, height: 100 });
+    // Viewport fetched exactly once
+    expect(mockEvaluate).toHaveBeenCalledTimes(1);
   });
 
   it("maps failed/off-screen elements to null", async () => {
-    // Node 10: visible
+    // Viewport fetched once at batch level
     mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
+    // Node 10: visible
     mockSend.mockResolvedValueOnce({
       quads: [[0, 0, 100, 0, 100, 50, 0, 50]],
     });
     // Node 20: stale node (CDP error)
-    mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
     mockSend.mockRejectedValueOnce(new Error("Could not find node"));
     // Node 30: off-screen
-    mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
     mockSend.mockResolvedValueOnce({
       quads: [[2000, 2000, 2100, 2000, 2100, 2100, 2000, 2100]],
     });
@@ -486,6 +496,8 @@ describe("batchGetBoundingBoxes", () => {
 
     expect(result).toBeInstanceOf(Map);
     expect(result.size).toBe(0);
+    // No viewport fetch for empty input
+    expect(mockEvaluate).not.toHaveBeenCalled();
   });
 
   it("handles single-element array", async () => {
@@ -498,5 +510,29 @@ describe("batchGetBoundingBoxes", () => {
 
     expect(result.size).toBe(1);
     expect(result.get(42)).toEqual({ x: 50, y: 50, width: 100, height: 50 });
+  });
+
+  it("throws RangeError when batch size exceeds limit", async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => i);
+
+    await expect(batchGetBoundingBoxes(ids)).rejects.toThrow(RangeError);
+    await expect(batchGetBoundingBoxes(ids)).rejects.toThrow(
+      "Batch size 501 exceeds maximum of 500",
+    );
+  });
+
+  it("deduplicates input IDs", async () => {
+    mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
+    // Only one CDP call for the single unique ID
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 50, 0, 50]],
+    });
+
+    const result = await batchGetBoundingBoxes([10, 10, 10]);
+
+    expect(result.size).toBe(1);
+    expect(result.get(10)).toEqual({ x: 0, y: 0, width: 100, height: 50 });
+    // Only one CDP call despite three input IDs
+    expect(mockSend).toHaveBeenCalledTimes(1);
   });
 });
