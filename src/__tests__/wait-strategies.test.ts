@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TimeoutError } from "puppeteer-core";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
@@ -201,14 +202,24 @@ describe("smartWait", () => {
 
   // ── Error handling tests ────────────────────────────────────────────
 
-  it("swallows timeout errors when waiting for indicator to disappear", async () => {
+  it("swallows TimeoutError when waiting for indicator to disappear", async () => {
+    mockDollar.mockResolvedValue({ some: "element" }); // loading indicator found
+    mockWaitForSelector.mockRejectedValue(new TimeoutError("Timeout exceeded"));
+
+    const { smartWait } = await import("../util/wait-strategies.js");
+
+    // Should not throw — TimeoutError instances are swallowed
+    await expect(smartWait(mockPage as any)).resolves.not.toThrow();
+  });
+
+  it("does NOT swallow a regular Error with 'Timeout' in the message", async () => {
     mockDollar.mockResolvedValue({ some: "element" }); // loading indicator found
     mockWaitForSelector.mockRejectedValue(new Error("Timeout exceeded"));
 
     const { smartWait } = await import("../util/wait-strategies.js");
 
-    // Should not throw
-    await expect(smartWait(mockPage as any)).resolves.not.toThrow();
+    // A plain Error is not a TimeoutError, so it should be thrown
+    await expect(smartWait(mockPage as any)).rejects.toThrow("Timeout exceeded");
   });
 
   it("returns elapsed time in milliseconds", async () => {

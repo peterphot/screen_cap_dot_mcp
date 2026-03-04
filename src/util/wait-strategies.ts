@@ -9,6 +9,7 @@
  */
 
 import type { Page } from "puppeteer-core";
+import { TimeoutError } from "puppeteer-core";
 import logger from "./logger.js";
 
 /** Combined ARIA + generic loading indicator selector. */
@@ -74,10 +75,9 @@ export async function smartWait(
         timeout: selectorTimeout,
       });
     } catch (err) {
-      const msg = (err as Error).message;
-      if (msg.includes("Timeout") || msg.includes("waiting for selector")) {
+      if (err instanceof TimeoutError) {
         // Swallow timeout errors — indicator may still be present but we move on
-        logger.debug(`Loading indicator wait timed out: ${msg}`);
+        logger.debug(`Loading indicator wait timed out: ${(err as Error).message}`);
       } else {
         throw err;
       }
@@ -87,10 +87,12 @@ export async function smartWait(
   }
 
   // Phase 2: Wait for network idle
+  const elapsed = Date.now() - startTime;
+  const remainingTimeout = Math.max(0, effectiveTimeout - elapsed);
   logger.info("Waiting for network idle...");
   await page.waitForNetworkIdle({
     idleTime: NETWORK_IDLE_TIME,
-    timeout: effectiveTimeout,
+    timeout: remainingTimeout,
   });
 
   const elapsedMs = Date.now() - startTime;
