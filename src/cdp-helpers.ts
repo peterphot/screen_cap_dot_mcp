@@ -29,6 +29,12 @@ function assertValidNodeId(id: number): void {
   }
 }
 
+function assertValidQuad(quad: number[]): void {
+  if (quad.length < 8) {
+    throw new Error(`Expected quad with 8 values, got ${quad.length}`);
+  }
+}
+
 // ── Error wrapping ──────────────────────────────────────────────────────
 
 /**
@@ -56,9 +62,7 @@ async function wrapStaleNodeError<T>(fn: () => Promise<T>): Promise<T> {
  * Indices: [x1,y1, x2,y2, x3,y3, x4,y4]
  */
 function quadCenter(quad: number[]): { x: number; y: number } {
-  if (quad.length < 8) {
-    throw new Error(`Expected quad with 8 values, got ${quad.length}`);
-  }
+  assertValidQuad(quad);
   const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
   const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
   return { x, y };
@@ -221,9 +225,7 @@ export interface BoundingBox {
  * Returns the axis-aligned bounding rectangle enclosing all 4 corners.
  */
 function quadToBoundingBox(quad: number[]): BoundingBox {
-  if (quad.length < 8) {
-    throw new Error(`Expected quad with 8 values, got ${quad.length}`);
-  }
+  assertValidQuad(quad);
   const xs = [quad[0], quad[2], quad[4], quad[6]];
   const ys = [quad[1], quad[3], quad[5], quad[7]];
 
