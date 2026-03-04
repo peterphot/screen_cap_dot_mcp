@@ -146,12 +146,12 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_screenshot",
-    "Capture a screenshot of the viewport, full page, or a specific element. Set annotate: true to overlay [eN] ref labels on interactive elements (requires a prior browser_a11y_snapshot call). Returns an image content block that Claude can see.",
+    "Capture a screenshot. Set annotate=true to overlay ref labels from browser_a11y_snapshot on interactive elements.",
     {
-      selector: z.string().optional(),
-      fullPage: z.boolean().optional(),
-      savePath: z.string().optional(),
-      annotate: z.boolean().optional(),
+      selector: z.string().optional().describe("CSS selector to screenshot a specific element"),
+      fullPage: z.boolean().optional().describe("Capture the full scrollable page (default: false)"),
+      savePath: z.string().optional().describe("File path to save the screenshot (must be within SCREENSHOT_DIR)"),
+      annotate: z.boolean().optional().describe("Overlay ref labels from browser_a11y_snapshot on interactive elements"),
     },
     async ({ selector, fullPage, savePath, annotate }) => {
       try {
@@ -240,11 +240,11 @@ export function registerObservationTools(server: McpServer): void {
 
   server.tool(
     "browser_a11y_snapshot",
-    'Capture the accessibility tree of the current page. Returns a compact indented text format by default with ref IDs (e.g. [e1]) prominently displayed at the start of each line. Set format: "json" for the full JSON representation. Ref IDs can be used with browser_click, browser_type, browser_scroll_to_element, and browser_hover instead of CSS selectors.',
+    "Capture the accessibility tree as a compact text tree with ref IDs (e.g. [e1], [e2]). Use these refs with browser_click, browser_type, browser_hover, and browser_scroll_to_element. Set format='json' for full JSON output.",
     {
-      interestingOnly: z.boolean().optional(),
-      format: z.enum(["tree", "json"]).optional(),
-      maxDepth: z.number().int().min(0).max(100).optional(),
+      interestingOnly: z.boolean().optional().describe("Only include interactive/informative nodes (default: true)"),
+      format: z.enum(["tree", "json"]).optional().describe("Output format: compact 'tree' (default) or full 'json'"),
+      maxDepth: z.number().int().min(0).max(100).optional().describe("Maximum tree depth to render (omit for unlimited)"),
     },
     async ({ interestingOnly, format, maxDepth }) => {
       try {
@@ -337,7 +337,7 @@ export function registerObservationTools(server: McpServer): void {
     "browser_get_text",
     "Get the innerText of an element identified by CSS selector.",
     {
-      selector: z.string(),
+      selector: z.string().describe("CSS selector of the element to extract text from"),
     },
     async ({ selector }) => {
       try {

@@ -65,8 +65,8 @@ export function registerNavigationTools(server: McpServer): void {
     "browser_navigate",
     "Navigate the browser to a URL.",
     {
-      url: z.string(),
-      waitUntil: z.enum(["load", "domcontentloaded", "networkidle0", "networkidle2"]).optional(),
+      url: z.string().describe("URL to navigate to (http/https only)"),
+      waitUntil: z.enum(["load", "domcontentloaded", "networkidle0", "networkidle2"]).optional().describe("Navigation wait strategy (default: 'load')"),
     },
     async ({ url, waitUntil }) => {
       try {
@@ -103,8 +103,8 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_click",
-    "Click an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
-    { selector: z.string().optional(), ref: z.string().optional() },
+    "Click an element. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e3'). Alternative: CSS selector.",
+    { selector: z.string().optional().describe("CSS selector of the element to click"), ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e3')") },
     async ({ selector, ref }) => {
       try {
         await performClick(selector, ref);
@@ -126,12 +126,12 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_type",
-    "Type text into an input field. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
+    "Type text into an input. PREFERRED: use `ref` from browser_a11y_snapshot (e.g. ref='e6'). Alternative: CSS selector.",
     {
-      selector: z.string().optional(),
-      ref: z.string().optional(),
-      text: z.string(),
-      clear: z.boolean().optional(),
+      selector: z.string().optional().describe("CSS selector of the input element"),
+      ref: z.string().optional().describe("Ref from browser_a11y_snapshot (e.g. 'e6')"),
+      text: z.string().describe("Text to type into the input"),
+      clear: z.boolean().optional().describe("Clear existing content before typing (default: false)"),
     },
     async ({ selector, ref, text, clear }) => {
       try {
@@ -154,8 +154,8 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_hover",
-    "Hover over an element on the page. Accepts either a CSS selector or a ref from browser_a11y_snapshot.",
-    { selector: z.string().optional(), ref: z.string().optional() },
+    "Hover over an element. PREFERRED: use `ref` from browser_a11y_snapshot. Alternative: CSS selector.",
+    { selector: z.string().optional().describe("CSS selector of the element to hover over"), ref: z.string().optional().describe("Ref from browser_a11y_snapshot") },
     async ({ selector, ref }) => {
       try {
         await performHover(selector, ref);
@@ -179,8 +179,8 @@ export function registerNavigationTools(server: McpServer): void {
     "browser_select",
     "Select a dropdown option by value.",
     {
-      selector: z.string(),
-      value: z.string(),
+      selector: z.string().describe("CSS selector of the <select> element"),
+      value: z.string().describe("Value attribute of the <option> to select"),
     },
     async ({ selector, value }) => {
       try {
@@ -205,7 +205,7 @@ export function registerNavigationTools(server: McpServer): void {
     server.tool(
       "browser_evaluate",
       "Run arbitrary JavaScript in the page context and return the result. WARNING: This executes code with full access to the page (cookies, localStorage, DOM, network). Only use in trusted environments.",
-      { script: z.string() },
+      { script: z.string().describe("JavaScript code to execute in the page context") },
       async ({ script }) => {
         try {
           logger.warn(`[AUDIT] browser_evaluate called. Script length: ${script.length} chars`);
@@ -252,7 +252,7 @@ export function registerNavigationTools(server: McpServer): void {
   server.tool(
     "browser_switch_page",
     "Switch to a different browser tab by index.",
-    { index: z.number() },
+    { index: z.number().describe("Zero-based tab index (see browser_list_pages)") },
     async ({ index }) => {
       try {
         if (isRecordingActive()) {
