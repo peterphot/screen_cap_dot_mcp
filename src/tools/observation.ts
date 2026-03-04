@@ -123,21 +123,28 @@ export function filterRefsByPriority(
     return { filtered: new Map(refMap), totalCount, wasFiltered: false };
   }
 
-  // Build sortable entries with priority
-  const entries = [...refMap.entries()].map(([ref, nodeId]) => {
+  // Bucket entries by priority tier (O(n) instead of O(n log n) sort)
+  const buckets = new Map<number, Array<[string, number]>>();
+  for (const [ref, nodeId] of refMap) {
     const role = roles.get(ref);
     const priority = role ? (ROLE_PRIORITY[role] ?? DEFAULT_PRIORITY) : DEFAULT_PRIORITY + 1;
-    return { ref, nodeId, priority };
-  });
+    let bucket = buckets.get(priority);
+    if (!bucket) {
+      bucket = [];
+      buckets.set(priority, bucket);
+    }
+    bucket.push([ref, nodeId]);
+  }
 
-  // Sort by priority (lower = higher priority), stable sort preserves ref order within same tier
-  entries.sort((a, b) => a.priority - b.priority);
-
-  // Take top N
-  const kept = entries.slice(0, limit);
+  // Flatten buckets in priority order until we hit the limit
+  const priorityKeys = [...buckets.keys()].sort((a, b) => a - b);
   const filtered = new Map<string, number>();
-  for (const { ref, nodeId } of kept) {
-    filtered.set(ref, nodeId);
+  for (const key of priorityKeys) {
+    for (const [ref, nodeId] of buckets.get(key)!) {
+      if (filtered.size >= limit) break;
+      filtered.set(ref, nodeId);
+    }
+    if (filtered.size >= limit) break;
   }
 
   return { filtered, totalCount, wasFiltered: true };
@@ -178,7 +185,7 @@ export function annotateTreeWithRefs(node: A11ySnapshotNode, depth = 0): void {
     node.ref = ref;
     // Track role for priority filtering in annotated screenshots
     if (node.role) {
-      refRoles.set(ref, node.role);
+      setRefRole(ref, node.role);
     }
   }
   delete node.backendNodeId;
