@@ -1123,4 +1123,25 @@ describe("match-based steps", () => {
     expect(result.steps[0].success).toBe(false);
     expect(result.steps[1].success).toBe(true);
   });
+
+  it("takes only 1 a11y snapshot when step has both match and label", async () => {
+    const fakeSnapshot = { role: "WebArea", name: "Test" };
+    mockPage.accessibility.snapshot.mockResolvedValue(fakeSnapshot);
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "cache-snapshot",
+      steps: [{ action: "click", match: { role: "button", name: "Submit" }, label: "submit-click" }],
+    };
+
+    await runner.run(flow);
+
+    // Only 1 snapshot call — cached and shared between resolveMatch and captureArtifacts
+    expect(mockPage.accessibility.snapshot).toHaveBeenCalledTimes(1);
+    // resolveMatch should receive the snapshot via options
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "button", name: "Submit" },
+      { snapshot: fakeSnapshot },
+    );
+  });
 });

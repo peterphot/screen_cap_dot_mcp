@@ -173,6 +173,30 @@ describe("matchA11yNode", () => {
     expect(result).not.toBeNull();
     expect(result!.node.backendNodeId).toBe(10);
   });
+
+  it("returns correct result from a tree with many matching nodes", () => {
+    // Build a tree with 20 buttons to verify matchA11yNode handles large result sets
+    const manyButtons: A11ySnapshotNode = {
+      role: "WebArea",
+      name: "Big Page",
+      children: Array.from({ length: 20 }, (_, i) => ({
+        role: "button",
+        name: `Btn ${i}`,
+        backendNodeId: 1000 + i,
+      })),
+    };
+
+    // Default (index 0) — should return first
+    const first = matchA11yNode(manyButtons, { role: "button" });
+    expect(first).not.toBeNull();
+    expect(first!.node.backendNodeId).toBe(1000);
+    expect(first!.matchCount).toBe(20);
+
+    // index 5 — should return the 6th button
+    const sixth = matchA11yNode(manyButtons, { role: "button", index: 5 });
+    expect(sixth).not.toBeNull();
+    expect(sixth!.node.backendNodeId).toBe(1005);
+  });
 });
 
 // ── resolveMatch tests ──────────────────────────────────────────────────
@@ -246,5 +270,28 @@ describe("resolveMatch", () => {
     expect(result.backendNodeId).toBe(10);
     // Should NOT have called page.accessibility.snapshot since we passed one in
     expect(mockPage.accessibility.snapshot).not.toHaveBeenCalled();
+  });
+
+  it("resolves correct node with index using early-exit limit optimization", async () => {
+    // Build a tree with many matching nodes to exercise the limit optimization
+    const manyButtons: A11ySnapshotNode = {
+      role: "WebArea",
+      name: "Big Page",
+      children: Array.from({ length: 20 }, (_, i) => ({
+        role: "button",
+        name: `Btn ${i}`,
+        backendNodeId: 1000 + i,
+      })),
+    };
+    mockPage.accessibility.snapshot.mockResolvedValue(manyButtons);
+    mockAllocateRef.mockReturnValue("e7");
+
+    // Request index 3 — the 4th button (backendNodeId 1003)
+    const result = await resolveMatch({ role: "button", index: 3 });
+    expect(result.backendNodeId).toBe(1003);
+    expect(result.ref).toBe("e7");
+    expect(mockAllocateRef).toHaveBeenCalledWith(1003);
+    // matchCount should be limited to index+1 = 4 (early-exit)
+    expect(result.matchCount).toBe(4);
   });
 });
