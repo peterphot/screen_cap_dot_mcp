@@ -32,6 +32,24 @@ import { resolveMatch } from "../util/a11y-matcher.js";
 import { scrollToText } from "../util/scroll-to-text.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * Step actions that mutate the page, invalidating any cached a11y snapshot.
+ */
+const MUTATING_STEP_ACTIONS = [
+  "click",
+  "click_at",
+  "type",
+  "navigate",
+  "evaluate",
+  "press_key",
+  "scroll",
+  "scroll_to_text",
+  "hover",
+  "hover_at",
+] as const;
+
 // ── Path confinement ──────────────────────────────────────────────────────
 
 /**
@@ -78,7 +96,8 @@ export class FlowRunner {
    *
    * @param flow - Validated flow definition
    * @param recordOverride - Override the flow's recording config (true/false)
-   * @param section - If provided, only execute the named group section
+   * @param section - If provided, only execute the named top-level group section.
+   *   Throws if no top-level group with that name exists in the flow.
    * @returns Results with step outcomes and artifact paths
    */
   async run(flow: FlowDefinition, recordOverride?: boolean, section?: string): Promise<FlowRunResult> {
@@ -363,7 +382,7 @@ export class FlowRunner {
           const nestedStep = groupSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, groupSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
-          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
+          if ((MUTATING_STEP_ACTIONS as readonly string[]).includes(nestedStep.action)) {
             groupSnapshot = undefined;
           }
           // Re-fetch snapshot if invalidated and remaining steps use match
@@ -404,7 +423,7 @@ export class FlowRunner {
           const nestedStep = branchSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
-          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
+          if ((MUTATING_STEP_ACTIONS as readonly string[]).includes(nestedStep.action)) {
             branchSnapshot = undefined;
           }
           // Re-fetch snapshot if invalidated and remaining steps use match

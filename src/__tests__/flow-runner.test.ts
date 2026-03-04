@@ -1956,3 +1956,54 @@ describe("group steps", () => {
     expect(mockPage.click).toHaveBeenCalledWith(".banner .dismiss");
   });
 });
+
+// ── section parameter ───────────────────────────────────────────────────────
+
+describe("section parameter", () => {
+  const runner = new FlowRunner();
+
+  it("executes only the named group when section is provided", async () => {
+    const flow: FlowDefinition = {
+      name: "section-filter",
+      steps: [
+        {
+          action: "group",
+          name: "Setup",
+          steps: [{ action: "navigate", url: "https://setup.example.com" }],
+        },
+        {
+          action: "group",
+          name: "Teardown",
+          steps: [{ action: "navigate", url: "https://teardown.example.com" }],
+        },
+      ],
+    };
+
+    const result = await runner.run(flow, undefined, "Teardown");
+
+    // Only the Teardown group should execute
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].action).toBe("group");
+    expect(result.steps[0].success).toBe(true);
+    // Navigate to teardown URL should be called, but NOT setup URL
+    expect(mockPage.goto).toHaveBeenCalledTimes(1);
+    expect(mockPage.goto).toHaveBeenCalledWith("https://teardown.example.com/", expect.anything());
+  });
+
+  it("throws when section name is not found", async () => {
+    const flow: FlowDefinition = {
+      name: "section-not-found",
+      steps: [
+        {
+          action: "group",
+          name: "Only Group",
+          steps: [{ action: "sleep", duration: 100 }],
+        },
+      ],
+    };
+
+    await expect(runner.run(flow, undefined, "Nonexistent")).rejects.toThrow(
+      'Section "Nonexistent" not found in flow "section-not-found".',
+    );
+  });
+});

@@ -171,12 +171,12 @@ export function registerFlowTools(server: McpServer): void {
 
   server.tool(
     "browser_run_flow",
-    "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config. Use 'section' to run only a specific named group.",
+    "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config. Use 'section' to run only a specific top-level named group.",
     {
       name: z.string().optional().describe("Name of a saved flow to load from flows/ directory"),
       flow: z.unknown().optional().describe("Inline flow definition object (alternative to name)"),
       record: z.boolean().optional().describe("Override recording config (true to record, false to skip)"),
-      section: z.string().optional().describe("Name of a specific group to run (only that section will be executed)"),
+      section: z.string().optional().describe("Run only the top-level group step whose 'name' matches this value. Must be an exact match against a top-level group name; throws if not found."),
     },
     async ({ name, flow, record, section }) => {
       try {
