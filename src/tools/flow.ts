@@ -48,9 +48,9 @@ export function registerFlowTools(server: McpServer): void {
     "browser_run_flow",
     "Execute a saved flow by name (from flows/ directory) or an inline flow definition. Optionally override recording config.",
     {
-      name: z.string().optional(),
-      flow: z.unknown().optional(),
-      record: z.boolean().optional(),
+      name: z.string().optional().describe("Name of a saved flow to load from flows/ directory"),
+      flow: z.unknown().optional().describe("Inline flow definition object (alternative to name)"),
+      record: z.boolean().optional().describe("Override recording config (true to record, false to skip)"),
     },
     async ({ name, flow, record }) => {
       try {
@@ -252,7 +252,7 @@ export function registerFlowTools(server: McpServer): void {
     "browser_save_flow",
     "Save a flow definition to the flows/ directory as a JSON file.",
     {
-      flow: z.unknown(),
+      flow: z.unknown().describe("Flow definition object to save (must match FlowDefinitionSchema)"),
     },
     async ({ flow }) => {
       try {
