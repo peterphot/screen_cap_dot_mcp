@@ -180,7 +180,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_click_at",
-    "Click at absolute viewport coordinate (x, y). Use when CSS selectors and a11y refs are unavailable — e.g. Canvas-rendered charts, custom visualizations, or WebGL elements.",
+    "Click at absolute viewport coordinate (x, y). Prefer browser_click with refs when available; use coordinate-based tools as a fallback for Canvas-rendered charts, custom visualizations, or WebGL elements where CSS selectors and a11y refs are unavailable.",
     {
       x: z.number().describe("X coordinate in viewport pixels"),
       y: z.number().describe("Y coordinate in viewport pixels"),
@@ -206,7 +206,7 @@ export function registerNavigationTools(server: McpServer): void {
 
   server.tool(
     "browser_hover_at",
-    "Hover at absolute viewport coordinate (x, y). Use when CSS selectors and a11y refs are unavailable — e.g. Canvas-rendered charts, custom visualizations, or triggering tooltips on non-DOM elements.",
+    "Hover at absolute viewport coordinate (x, y). Prefer browser_hover with refs when available; use coordinate-based tools as a fallback for Canvas-rendered charts, custom visualizations, or triggering tooltips on non-DOM elements where CSS selectors and a11y refs are unavailable.",
     {
       x: z.number().describe("X coordinate in viewport pixels"),
       y: z.number().describe("Y coordinate in viewport pixels"),

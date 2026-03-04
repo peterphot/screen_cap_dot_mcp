@@ -225,12 +225,13 @@ export async function hoverByBackendNodeId(
  * custom visualizations, and elements that lack stable CSS selectors
  * or accessibility refs.
  *
+ * @returns The coordinates where the click was dispatched
  * @throws RangeError if x or y is negative or NaN
  */
 export async function clickAtCoordinates(
   x: number,
   y: number,
-): Promise<void> {
+): Promise<{ x: number; y: number }> {
   assertValidCoordinates(x, y);
   const cdp = await ensureCDPSession();
 
@@ -249,6 +250,8 @@ export async function clickAtCoordinates(
     button: "left",
     clickCount: 1,
   });
+
+  return { x, y };
 }
 
 /**
@@ -259,12 +262,13 @@ export async function clickAtCoordinates(
  * visualizations, and elements that lack stable CSS selectors or
  * accessibility refs.
  *
+ * @returns The coordinates where the hover was dispatched
  * @throws RangeError if x or y is negative or NaN
  */
 export async function hoverAtCoordinates(
   x: number,
   y: number,
-): Promise<void> {
+): Promise<{ x: number; y: number }> {
   assertValidCoordinates(x, y);
   const cdp = await ensureCDPSession();
 
@@ -275,6 +279,8 @@ export async function hoverAtCoordinates(
     button: "none",
     clickCount: 0,
   });
+
+  return { x, y };
 }
 
 // ── Bounding box types ──────────────────────────────────────────────────
