@@ -28,6 +28,9 @@ function getScreenshotDir(): string {
   return resolveConfigDir("SCREENSHOT_DIR", "/tmp/screen-cap-screenshots");
 }
 
+/** Hard recursion cap to prevent stack overflow on deeply nested or malformed trees. */
+const MAX_ANNOTATE_DEPTH = 512;
+
 /**
  * Recursively annotate an accessibility tree node with ref IDs.
  *
@@ -38,7 +41,9 @@ function getScreenshotDir(): string {
  *
  * Mutates the node in-place.
  */
-export function annotateTreeWithRefs(node: A11ySnapshotNode): void {
+export function annotateTreeWithRefs(node: A11ySnapshotNode, depth = 0): void {
+  if (depth > MAX_ANNOTATE_DEPTH) return;
+
   if (typeof node.backendNodeId === "number") {
     node.ref = allocateRef(node.backendNodeId);
   }
@@ -47,7 +52,7 @@ export function annotateTreeWithRefs(node: A11ySnapshotNode): void {
 
   if (Array.isArray(node.children)) {
     for (const child of node.children) {
-      annotateTreeWithRefs(child);
+      annotateTreeWithRefs(child, depth + 1);
     }
   }
 }
@@ -157,18 +162,19 @@ export function registerObservationTools(server: McpServer): void {
           };
         }
 
-        annotateTreeWithRefs(snapshot as A11ySnapshotNode);
+        const tree = snapshot as A11ySnapshotNode;
+        annotateTreeWithRefs(tree);
 
         const outputFormat = format ?? "tree";
 
         let text: string;
         if (outputFormat === "json") {
-          const raw = JSON.stringify(snapshot);
+          const raw = JSON.stringify(tree);
           text = raw.length > MAX_A11Y_CHARS
             ? raw.slice(0, MAX_A11Y_CHARS) + `\n... (truncated, total ${raw.length} chars)`
             : raw;
         } else {
-          const filtered = filterTree(snapshot as A11ySnapshotNode);
+          const filtered = filterTree(tree);
           text = formatA11yTree(filtered, { maxDepth });
           if (text.length > MAX_A11Y_CHARS) {
             text = text.slice(0, MAX_A11Y_CHARS) + `\n... (truncated, total ${text.length} chars)`;

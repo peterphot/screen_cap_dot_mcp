@@ -637,6 +637,17 @@ describe("formatA11yTree", () => {
       expect(output).toBe("[e1] main");
     });
 
+    it("escapes embedded quotes, backslashes, newlines and carriage returns in name and value", () => {
+      const tree: A11ySnapshotNode = {
+        role: "textbox",
+        name: 'Say "hello"',
+        ref: "e1",
+        value: "line1\nline2\rline3",
+      };
+      const output = formatA11yTree(tree);
+      expect(output).toBe('[e1] textbox "Say \\"hello\\"" value="line1\\nline2\\rline3"');
+    });
+
     it("handles truncation markers from filterTree", () => {
       // filterTree produces marker nodes with role "truncation"
       // formatA11yTree should render them naturally

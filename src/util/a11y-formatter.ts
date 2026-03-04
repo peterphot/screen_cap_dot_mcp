@@ -208,9 +208,9 @@ function getIndent(depth: number): string {
   return indentCache[depth];
 }
 
-/** Escape embedded quotes and newlines to preserve one-line-per-node format. */
+/** Escape embedded quotes, newlines, and carriage returns to preserve one-line-per-node format. */
 function escapeString(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 }
 
 /**
