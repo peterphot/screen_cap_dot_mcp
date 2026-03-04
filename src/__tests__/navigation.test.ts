@@ -3,6 +3,7 @@
  *
  * All browser module interactions are mocked. These tests verify:
  * - All 12 tools are registered on the McpServer with correct names/descriptions/schemas
+ *   (browser_scroll_to_text moved to scrolling.test.ts)
  * - Success paths return correct text content
  * - Error paths catch exceptions and return error text (never throw)
  * - Input validation via Zod schemas
@@ -973,3 +974,4 @@ describe("browser_press_key", () => {
     expect(result.content[0].text).not.toContain("A".repeat(80));
   });
 });
+

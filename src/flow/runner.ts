@@ -29,6 +29,7 @@ import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from 
 import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs, resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
+import { scrollToText } from "../util/scroll-to-text.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
@@ -323,6 +324,11 @@ export class FlowRunner {
         await page.evaluate(step.script);
         break;
 
+      case "scroll_to_text": {
+        await scrollToText(page, step.text, step.timeout);
+        break;
+      }
+
       case "sleep":
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
@@ -351,7 +357,7 @@ export class FlowRunner {
           const nestedStep = branchSteps[j];
           await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
-          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "hover", "hover_at"].includes(nestedStep.action)) {
+          if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "scroll_to_text", "hover", "hover_at"].includes(nestedStep.action)) {
             branchSnapshot = undefined;
           }
           // Re-fetch snapshot if invalidated and remaining steps use match
