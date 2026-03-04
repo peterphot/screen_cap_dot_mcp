@@ -13,8 +13,8 @@
  * - Match steps (click, type, hover with `match`):
  *   Validated via resolveMatch from a11y-matcher.
  * - Non-targetable steps (navigate, scroll, sleep, screenshot, evaluate,
- *   a11y_snapshot, click_at, hover_at, wait/smart, wait/network_idle,
- *   wait/delay, wait/function):
+ *   a11y_snapshot, click_at, hover_at, press_key, wait/smart,
+ *   wait/network_idle, wait/delay, wait/function):
  *   Marked as "skip" (no validation needed).
  */
 

@@ -256,6 +256,10 @@ export class FlowRunner {
         await hoverAtCoordinates(step.x, step.y);
         break;
 
+      case "press_key":
+        await page.keyboard.press(step.key);
+        break;
+
       case "wait":
         await this.executeWait(page, step);
         break;

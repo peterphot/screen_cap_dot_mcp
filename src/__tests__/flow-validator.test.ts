@@ -442,6 +442,19 @@ describe("FlowValidator", () => {
       expect(report.steps[0].status).toBe("skip");
     });
 
+    it("marks press_key step as 'skip'", async () => {
+      const flow: FlowDefinition = {
+        name: "press-key-skip",
+        steps: [{ action: "press_key", key: "Escape" }],
+      };
+
+      const validator = new FlowValidator();
+      const report = await validator.validate(flow);
+
+      expect(report.valid).toBe(true);
+      expect(report.steps[0].status).toBe("skip");
+    });
+
     it("marks wait/smart step as 'skip'", async () => {
       const flow: FlowDefinition = {
         name: "wait-smart-skip",

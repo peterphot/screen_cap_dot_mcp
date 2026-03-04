@@ -320,6 +320,104 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // ── press_key step ──────────────────────────────────────────────────
+
+  it("validates a press_key step with key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Escape",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a press_key step with label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Tab",
+      label: "tab-to-next",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a press_key step with modifier combination", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Control+a",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a press_key step without key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a press_key step with empty key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a press_key step with spaces in key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Control a",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a press_key step with injection attempt", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Escape; rm -rf /",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a press_key step with special characters", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "<script>alert(1)</script>",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a press_key step with F12 function key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "F12",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a press_key step with single character key", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "a",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a press_key step with Shift+A modifier combo", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Shift+A",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a press_key step with Meta+c modifier combo", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "press_key",
+      key: "Meta+c",
+    });
+    expect(result.success).toBe(true);
+  });
+
   // ── click_at step ───────────────────────────────────────────────────
 
   it("validates a click_at step with x, y", () => {
@@ -661,6 +759,18 @@ describe("FlowDefinitionSchema", () => {
       steps: [{ action: "invalid" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("validates a flow with press_key step", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "press-key-flow",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        { action: "click", selector: ".modal-trigger" },
+        { action: "press_key", key: "Escape", label: "close-modal" },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 
   it("validates a flow with match-based steps", () => {

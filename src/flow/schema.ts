@@ -5,8 +5,8 @@
  * Each step has an `action` field (discriminated union) and action-specific params.
  * Steps can have optional `label` for naming screenshots/moments.
  *
- * Supported actions: navigate, click, click_at, type, hover, hover_at, wait,
- * scroll, screenshot, a11y_snapshot, evaluate, sleep.
+ * Supported actions: navigate, click, click_at, type, hover, hover_at, press_key,
+ * wait, scroll, screenshot, a11y_snapshot, evaluate, sleep.
  *
  * Element targeting: click, type, and hover steps accept exactly one of:
  * - `selector` (CSS selector)
@@ -15,6 +15,12 @@
  */
 
 import { z } from "zod";
+
+// ── Shared key format constants ─────────────────────────────────────────
+
+/** Regex for validating keyboard key strings (e.g. "Enter", "Control+a"). */
+export const KEY_FORMAT_PATTERN = /^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$/;
+export const KEY_FORMAT_MESSAGE = "Invalid key format. Use key names like 'Enter', 'Tab', or modifier combos like 'Control+a'.";
 
 // ── Match selector schema ───────────────────────────────────────────────
 
@@ -91,6 +97,12 @@ const HoverAtStep = z.object({
   action: z.literal("hover_at"),
   x: z.number().nonnegative(),
   y: z.number().nonnegative(),
+  label: z.string().optional(),
+});
+
+const PressKeyStep = z.object({
+  action: z.literal("press_key"),
+  key: z.string().min(1).max(100).regex(KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE),
   label: z.string().optional(),
 });
 
@@ -182,6 +194,7 @@ export const FlowStepSchema = z.union([
   TypeStep,
   HoverStep,
   HoverAtStep,
+  PressKeyStep,
   WaitStep,
   ScrollStep,
   ScreenshotStep,

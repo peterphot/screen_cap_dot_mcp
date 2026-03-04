@@ -2,12 +2,13 @@
  * Unit tests for navigation tools (src/tools/navigation.ts)
  *
  * All browser module interactions are mocked. These tests verify:
- * - All 11 tools are registered on the McpServer with correct names/descriptions/schemas
+ * - All 12 tools are registered on the McpServer with correct names/descriptions/schemas
  * - Success paths return correct text content
  * - Error paths catch exceptions and return error text (never throw)
  * - Input validation via Zod schemas
  * - Ref-based interaction via CDP helpers (browser_click, browser_type, browser_hover)
  * - Coordinate-based interaction (browser_click_at, browser_hover_at)
+ * - Keyboard interaction (browser_press_key)
  * - Refs cleared on navigation
  */
 
@@ -84,6 +85,7 @@ interface MockPage {
   select: ReturnType<typeof vi.fn>;
   evaluate: ReturnType<typeof vi.fn>;
   hover: ReturnType<typeof vi.fn>;
+  keyboard: { press: ReturnType<typeof vi.fn> };
 }
 
 let mockPage: MockPage;
@@ -130,6 +132,7 @@ beforeEach(async () => {
     select: vi.fn().mockResolvedValue(["option1"]),
     evaluate: vi.fn().mockResolvedValue({ result: "test" }),
     hover: vi.fn().mockResolvedValue(undefined),
+    keyboard: { press: vi.fn().mockResolvedValue(undefined) },
   };
 
   mockClickByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
@@ -157,7 +160,7 @@ beforeEach(async () => {
 // ── Tool Registration ───────────────────────────────────────────────────
 
 describe("registerNavigationTools", () => {
-  it("registers all 11 tools on the server", () => {
+  it("registers all 12 tools on the server", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
@@ -172,7 +175,8 @@ describe("registerNavigationTools", () => {
     expect(toolNames).toContain("browser_hover");
     expect(toolNames).toContain("browser_click_at");
     expect(toolNames).toContain("browser_hover_at");
-    expect(toolNames).toHaveLength(11);
+    expect(toolNames).toContain("browser_press_key");
+    expect(toolNames).toHaveLength(12);
   });
 
   it("each tool has a description", () => {
@@ -874,5 +878,98 @@ describe("browser_hover_at", () => {
     const tools = getRegisteredTools(server);
     const tool = tools["browser_hover_at"];
     expect(tool.description).toContain("coordinate");
+  });
+});
+
+// ── browser_press_key ──────────────────────────────────────────────────
+
+describe("browser_press_key", () => {
+  it("calls page.keyboard.press with the given key and returns success text", async () => {
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "Escape" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Escape");
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Escape");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("supports Tab key", async () => {
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "Tab" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Tab");
+    expect(result.content[0].text).toContain("Tab");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("supports Enter key", async () => {
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "Enter" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Enter");
+    expect(result.content[0].text).toContain("Enter");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("supports arrow keys", async () => {
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "ArrowDown" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("ArrowDown");
+    expect(result.content[0].text).toContain("ArrowDown");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("supports modifier combinations like Control+a", async () => {
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "Control+a" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockPage.keyboard.press).toHaveBeenCalledWith("Control+a");
+    expect(result.content[0].text).toContain("Control+a");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("returns error text when keyboard.press fails (does not throw)", async () => {
+    mockPage.keyboard.press.mockRejectedValue(new Error("Key press failed"));
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: "Escape" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Key press failed");
+  });
+
+  it("truncates long key values in error messages to 50 characters", async () => {
+    const longKey = "A".repeat(80);
+    mockPage.keyboard.press.mockRejectedValue(new Error("Key press failed"));
+    const handler = getToolHandler(server, "browser_press_key");
+    const result = await handler(
+      { key: longKey },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    // Should contain the truncated key (50 chars + ellipsis), not the full 80-char key
+    expect(result.content[0].text).toContain("A".repeat(50));
+    expect(result.content[0].text).not.toContain("A".repeat(80));
   });
 });

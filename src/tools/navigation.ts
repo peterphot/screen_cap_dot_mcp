@@ -1,7 +1,7 @@
 /**
  * Navigation tools for the MCP server.
  *
- * Registers 11 browser automation tools on the McpServer instance:
+ * Registers 12 browser automation tools on the McpServer instance:
  * - browser_connect: Connect to Chrome via CDP
  * - browser_navigate: Navigate to URL
  * - browser_click: Click element by CSS selector or ref
@@ -9,6 +9,7 @@
  * - browser_type: Type into input field by CSS selector or ref
  * - browser_hover: Hover over element by CSS selector or ref
  * - browser_hover_at: Hover at absolute viewport coordinates
+ * - browser_press_key: Dispatch keyboard events (Escape, Tab, Enter, arrows, modifiers)
  * - browser_select: Select dropdown option
  * - browser_evaluate: Run arbitrary JS in page context
  * - browser_list_pages: List open tabs
@@ -32,6 +33,7 @@ import { clearRefs } from "../ref-store.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
+import { KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE } from "../flow/schema.js";
 import logger from "../util/logger.js";
 
 /**
@@ -222,6 +224,31 @@ export function registerNavigationTools(server: McpServer): void {
       } catch (err) {
         return {
           content: [{ type: "text" as const, text: `Error hovering at (${x}, ${y}): ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_press_key ────────────────────────────────────────────────
+
+  server.tool(
+    "browser_press_key",
+    "Dispatch a keyboard event. Supports common keys (Escape, Tab, Enter, ArrowDown, ArrowUp, ArrowLeft, ArrowRight) and modifier combinations (e.g. \"Control+a\" for select-all).",
+    {
+      key: z.string().max(100).regex(KEY_FORMAT_PATTERN, KEY_FORMAT_MESSAGE).describe("Key to press (e.g. 'Escape', 'Tab', 'Enter', 'ArrowDown', 'Control+a')"),
+    },
+    async ({ key }) => {
+      try {
+        const page = await ensurePage();
+        await page.keyboard.press(key);
+        return {
+          content: [{ type: "text" as const, text: `Pressed key: ${key}` }],
+        };
+      } catch (err) {
+        const safeKey = key.length > 50 ? key.slice(0, 50) + "\u2026" : key;
+        return {
+          content: [{ type: "text" as const, text: `Error pressing key ${safeKey}: ${(err as Error).message}` }],
           isError: true,
         };
       }
