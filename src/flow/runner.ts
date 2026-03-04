@@ -9,6 +9,10 @@
  * 5. Continues on step failure (capture error screenshot, log, keep going)
  * 6. Writes a manifest.json summarizing the run
  * 7. Stops recording at end
+ *
+ * Element targeting: click, type, and hover steps can use:
+ * - `selector` (CSS) or `ref` (a11y snapshot ref ID) — handled by performClick/Type/Hover
+ * - `match` (semantic a11y match) — resolved at runtime via resolveMatch from a11y-matcher
  */
 
 import { join } from "node:path";
@@ -20,8 +24,11 @@ import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
+import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs } from "../ref-store.js";
+import { resolveMatch } from "../util/a11y-matcher.js";
+import type { MatchSelector } from "../util/a11y-matcher.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
 
@@ -198,7 +205,12 @@ export class FlowRunner {
       }
 
       case "click":
-        await performClick(step.selector, step.ref, page);
+        if (step.match) {
+          const resolved = await this.resolveMatchSelector(step.match);
+          await clickByBackendNodeId(resolved.backendNodeId);
+        } else {
+          await performClick(step.selector, step.ref, page);
+        }
         break;
 
       case "click_at":
@@ -206,11 +218,21 @@ export class FlowRunner {
         break;
 
       case "type":
-        await performType(step.text, step.selector, step.ref, step.clear, page);
+        if (step.match) {
+          const resolved = await this.resolveMatchSelector(step.match);
+          await typeByBackendNodeId(resolved.backendNodeId, step.text, step.clear);
+        } else {
+          await performType(step.text, step.selector, step.ref, step.clear, page);
+        }
         break;
 
       case "hover":
-        await performHover(step.selector, step.ref, page);
+        if (step.match) {
+          const resolved = await this.resolveMatchSelector(step.match);
+          await hoverByBackendNodeId(resolved.backendNodeId);
+        } else {
+          await performHover(step.selector, step.ref, page);
+        }
         break;
 
       case "hover_at":
@@ -275,6 +297,19 @@ export class FlowRunner {
         await new Promise((resolve) => setTimeout(resolve, step.duration));
         break;
     }
+  }
+
+  // ── Match resolution ────────────────────────────────────────────────
+
+  /**
+   * Resolve a match selector to a backendNodeId via the a11y matcher.
+   * Takes a fresh a11y snapshot and finds the matching element.
+   */
+  private async resolveMatchSelector(
+    match: MatchSelector,
+  ): Promise<{ ref: string; backendNodeId: number }> {
+    const resolved = await resolveMatch(match, {});
+    return { ref: resolved.ref, backendNodeId: resolved.backendNodeId };
   }
 
   private async executeWait(
