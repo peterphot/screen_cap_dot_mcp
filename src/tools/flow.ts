@@ -1,8 +1,9 @@
 /**
  * Flow tools for the MCP server.
  *
- * Registers 3 flow management tools on the McpServer instance:
+ * Registers 4 flow management tools on the McpServer instance:
  * - browser_run_flow: Execute a saved or inline flow definition
+ * - browser_validate_flow: Dry-run validation of a flow (no actions executed)
  * - browser_list_flows: List saved flow files in flows/ directory
  * - browser_save_flow: Save a flow definition to flows/ directory
  *
@@ -17,6 +18,7 @@ import { join } from "node:path";
 import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { FlowDefinitionSchema } from "../flow/schema.js";
 import { FlowRunner } from "../flow/runner.js";
+import { FlowValidator } from "../flow/validator.js";
 import logger from "../util/logger.js";
 
 // ── Path confinement ─────────────────────────────────────────────────────
@@ -305,6 +307,150 @@ export function registerFlowTools(server: McpServer): void {
             {
               type: "text" as const,
               text: `Error saving flow: ${(err as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ── browser_validate_flow ───────────────────────────────────────────
+
+  server.tool(
+    "browser_validate_flow",
+    "Dry-run a saved or inline flow: checks whether all selectors, refs, and match targets resolve to existing elements without executing any actions. Returns a per-step pass/fail report.",
+    {
+      name: z.string().optional().describe("Name of a saved flow to load from flows/ directory"),
+      flow: z.unknown().optional().describe("Inline flow definition object (alternative to name)"),
+      timeout: z.number().nonnegative().optional().describe("Timeout in ms for each selector check (default: 5000)"),
+    },
+    async ({ name, flow, timeout }) => {
+      try {
+        let definition;
+
+        if (flow) {
+          // Inline flow definition
+          const parsed = FlowDefinitionSchema.safeParse(flow);
+          if (!parsed.success) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Invalid flow definition: ${parsed.error.message}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          definition = parsed.data;
+        } else if (name) {
+          // Reject path traversal sequences
+          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Invalid flow name: must not contain '/', '\\', or '..'",
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          // Load from flows/ directory with path confinement
+          const flowsDir = getFlowsDir();
+          const flowPath = join(flowsDir, `${name}.json`);
+          const pathResult = await confinePathToFlowDir(flowPath);
+          if ("error" in pathResult) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Error: ${pathResult.error}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          let rawJson: string;
+          try {
+            rawJson = await readFile(pathResult.resolvedPath, "utf-8");
+          } catch {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Flow not found: ${name}.json. Use browser_list_flows to see available flows.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const parsed = FlowDefinitionSchema.safeParse(JSON.parse(rawJson));
+          if (!parsed.success) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Invalid flow file ${flowPath}: ${parsed.error.message}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          definition = parsed.data;
+        } else {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: provide either 'name' (to load from flows/) or 'flow' (inline definition).",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const validator = new FlowValidator();
+        const report = await validator.validate(definition, { timeout: timeout ?? 5000 });
+
+        const okCount = report.steps.filter((s) => s.status === "ok").length;
+        const missingCount = report.steps.filter((s) => s.status === "missing").length;
+        const skipCount = report.steps.filter((s) => s.status === "skip").length;
+
+        const lines = [
+          `Validation ${report.valid ? "PASS" : "FAIL"}: "${definition.name}"`,
+          `Steps: ${okCount} ok, ${missingCount} missing, ${skipCount} skip (${report.steps.length} total)`,
+        ];
+
+        if (missingCount > 0) {
+          lines.push("");
+          lines.push("Missing elements:");
+          for (const step of report.steps.filter((s) => s.status === "missing")) {
+            lines.push(`  - Step ${step.index} (${step.action}): ${step.detail}`);
+          }
+        }
+
+        lines.push("");
+        lines.push(JSON.stringify(report, null, 2));
+
+        logger.info(
+          `Flow "${definition.name}" validated: ${report.valid ? "PASS" : "FAIL"} ` +
+            `(${okCount} ok, ${missingCount} missing, ${skipCount} skip)`,
+        );
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error validating flow: ${(err as Error).message}`,
             },
           ],
           isError: true,
