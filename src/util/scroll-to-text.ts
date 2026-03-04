@@ -4,6 +4,8 @@ export async function scrollToText(page: Page, text: string, timeoutMs?: number)
   const searchText = text.toLowerCase();
   const effectiveTimeout = timeoutMs ?? 10_000;
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
   const scrollPromise = (async () => {
     const found = await page.evaluate(
       (txt: string) => {
@@ -32,9 +34,13 @@ export async function scrollToText(page: Page, text: string, timeoutMs?: number)
     await new Promise((resolve) => setTimeout(resolve, 250));
   })();
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`scroll_to_text timed out after ${effectiveTimeout}ms`)), effectiveTimeout),
-  );
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`scroll_to_text timed out after ${effectiveTimeout}ms`)), effectiveTimeout);
+  });
 
-  await Promise.race([scrollPromise, timeoutPromise]);
+  try {
+    await Promise.race([scrollPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
