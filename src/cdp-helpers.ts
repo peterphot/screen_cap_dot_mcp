@@ -10,9 +10,10 @@
  * - scrollIntoViewIfNeeded is called before any coordinate-dependent operation
  * - Center is calculated by averaging the 4 corners of the first content quad
  * - Stale node errors are caught and re-thrown with actionable guidance
+ * - Bounding box helpers do NOT scroll — used for annotated screenshot overlays
  */
 
-import { ensureCDPSession } from "./browser.js";
+import { ensureCDPSession, ensurePage } from "./browser.js";
 
 /** CDP modifier flag for the Control key. */
 export const CTRL_MODIFIER = 2;
@@ -200,4 +201,119 @@ export async function hoverByBackendNodeId(
 
     return center;
   });
+}
+
+// ── Bounding box types ──────────────────────────────────────────────────
+
+/** Axis-aligned bounding box in viewport coordinates. */
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// ── Bounding box helpers (non-scrolling) ────────────────────────────────
+
+/**
+ * Compute a bounding box from a content quad (8 numbers: 4 corners x,y).
+ * Returns the axis-aligned bounding rectangle enclosing all 4 corners.
+ */
+function quadToBoundingBox(quad: number[]): BoundingBox {
+  const xs = [quad[0], quad[2], quad[4], quad[6]];
+  const ys = [quad[1], quad[3], quad[5], quad[7]];
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Get the current viewport dimensions.
+ *
+ * Evaluates `window.innerWidth` and `window.innerHeight` in the page context.
+ * Used to filter out elements that are entirely off-screen.
+ */
+export async function getViewportBounds(): Promise<{ width: number; height: number }> {
+  const page = await ensurePage();
+  return page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+}
+
+/**
+ * Get the bounding box of an element by backendNodeId WITHOUT scrolling.
+ *
+ * Calls DOM.getContentQuads directly (no DOM.scrollIntoViewIfNeeded).
+ * Returns `null` if the element is hidden, has no quads, the CDP call fails,
+ * or the element is entirely outside the viewport.
+ *
+ * Elements that are partially off-screen still return their full bounding box.
+ */
+export async function getElementBoundingBox(
+  backendNodeId: number,
+): Promise<BoundingBox | null> {
+  assertValidNodeId(backendNodeId);
+
+  const viewport = await getViewportBounds();
+
+  let quads: number[][];
+  try {
+    const cdp = await ensureCDPSession();
+    const result = (await cdp.send("DOM.getContentQuads", {
+      backendNodeId,
+    })) as { quads?: number[][] };
+    quads = result.quads ?? [];
+  } catch {
+    return null;
+  }
+
+  if (quads.length === 0) {
+    return null;
+  }
+
+  const box = quadToBoundingBox(quads[0]);
+
+  // Filter out elements entirely outside the viewport
+  if (
+    box.x + box.width <= 0 ||
+    box.y + box.height <= 0 ||
+    box.x >= viewport.width ||
+    box.y >= viewport.height
+  ) {
+    return null;
+  }
+
+  return box;
+}
+
+/**
+ * Get bounding boxes for multiple elements in parallel.
+ *
+ * Uses Promise.allSettled() so that failures for individual elements
+ * don't prevent results for others. Failed or off-screen elements map to `null`.
+ *
+ * @returns Map from backendNodeId to bounding box (or null)
+ */
+export async function batchGetBoundingBoxes(
+  backendNodeIds: number[],
+): Promise<Map<number, BoundingBox | null>> {
+  const results = await Promise.allSettled(
+    backendNodeIds.map((id) => getElementBoundingBox(id)),
+  );
+
+  const map = new Map<number, BoundingBox | null>();
+  for (let i = 0; i < backendNodeIds.length; i++) {
+    const result = results[i];
+    map.set(
+      backendNodeIds[i],
+      result.status === "fulfilled" ? result.value : null,
+    );
+  }
+
+  return map;
 }
