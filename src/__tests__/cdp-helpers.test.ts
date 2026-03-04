@@ -517,13 +517,29 @@ describe("batchGetBoundingBoxes", () => {
     expect(result.get(42)).toEqual({ x: 50, y: 50, width: 100, height: 50 });
   });
 
-  it("throws RangeError when batch size exceeds limit", async () => {
-    const ids = Array.from({ length: 501 }, (_, i) => i);
+  it("throws RangeError when batch size exceeds raised limit of 1000", async () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => i);
 
     await expect(batchGetBoundingBoxes(ids)).rejects.toThrow(RangeError);
     await expect(batchGetBoundingBoxes(ids)).rejects.toThrow(
-      "Batch size 501 exceeds maximum of 500",
+      "Batch size 1001 exceeds maximum of 1000",
     );
+  });
+
+  it("accepts 501 elements (within raised limit of 1000)", async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => i);
+    mockEvaluate.mockResolvedValueOnce({ width: 1280, height: 720 });
+    // All elements return a visible bounding box
+    for (let i = 0; i < 501; i++) {
+      mockSend.mockResolvedValueOnce({
+        quads: [[0, 0, 100, 0, 100, 50, 0, 50]],
+      });
+    }
+
+    const result = await batchGetBoundingBoxes(ids);
+
+    expect(result.size).toBe(501);
+    // Should not throw — 501 is within the raised limit
   });
 
   it("deduplicates input IDs", async () => {

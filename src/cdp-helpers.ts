@@ -375,8 +375,16 @@ export async function getElementBoundingBox(
   return box;
 }
 
-/** Maximum number of elements per batch call. */
-const MAX_BATCH_SIZE = 500;
+/** Maximum number of elements per batch call (raised from 500 for data-heavy pages). */
+const MAX_BATCH_SIZE = 1000;
+
+/**
+ * Return the current batch size limit for batchGetBoundingBoxes.
+ * Exported so callers (e.g. annotation filtering) can pre-filter before calling.
+ */
+export function getBatchLimit(): number {
+  return MAX_BATCH_SIZE;
+}
 
 /** Maximum concurrent CDP calls within a batch. */
 const BATCH_CONCURRENCY = 20;

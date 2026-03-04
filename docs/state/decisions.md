@@ -1,36 +1,19 @@
-# Decision Log: pp-27-coordinate-click-hover
-_Initialized: 2026-03-04T12:00:00Z_
-
-## Clarify Phase
-_Captured: 2026-03-04T12:01:00Z_
-
-### D-CLARIFY-001: Non-negative validation only for coordinates
-- **Who decided**: user
-- **What**: Coordinate validation uses non-negative check only (no upper bound)
-- **Why**: User confirmed non-negative is sufficient; no need for upper bound
-- **Alternatives**: Upper bound validation (e.g., max 100,000)
-- **Context**: Asked user whether to enforce upper bound on x/y coordinates
-
-### D-CLARIFY-002: No ticket tracking
-- **Who decided**: user
-- **What**: Skip ticket tracking, proceed directly with build
-- **Why**: User preference for speed; no Linear MCP access in session
-- **Alternatives**: Local ticket tracking, Linear ticket tracking
-- **Context**: Asked user about ticket tracking preference for TICKET workflow
+# Decision Log: PP-29 Annotated Screenshot Batch Limit Fix
+_Initialized: 2026-03-04T18:00:00Z_
 
 ## Orchestrate Phase
-_Captured: 2026-03-04T12:01:00Z_
+_Captured: 2026-03-04T18:00:00Z_
 
-### D-ORCH-001: Scale assessment: SMALL
+### D-ORCH-001: Scale assessment - SMALL
 - **Who decided**: claude
-- **What**: Scale assessment is SMALL (4 files to modify, 4 test files)
-- **Why**: Ticket is fully specified with exact function signatures, file paths, and acceptance criteria. All changes follow existing patterns closely.
-- **Alternatives**: MEDIUM would add overhead without benefit
-- **Context**: PP-27 adds 2 CDP helpers, 2 tools, 2 flow schemas, 2 flow runner cases
+- **What**: Classify as SMALL (2 tasks)
+- **Why**: Ticket is well-defined with two files to change and clear acceptance criteria
+- **Alternatives**: MEDIUM (would add unnecessary overhead)
+- **Context**: Ticket PP-29 specifies exact files and changes needed
 
-### D-ORCH-002: Orchestration pattern: STANDARD sequential
+### D-ORCH-002: Orchestration pattern - STANDARD
 - **Who decided**: claude
-- **What**: Use standard sequential TDD pattern
-- **Why**: 4 tasks with sequential dependencies (cdp-helpers -> tools -> schema -> runner). No parallelization opportunity.
-- **Alternatives**: PARALLEL (not applicable due to dependencies), COUNCIL (overkill)
-- **Context**: Tasks must be built in order since tools depend on helpers, runner depends on schema
+- **What**: Use STANDARD sequential pattern
+- **Why**: Tasks have dependencies (T002's filtering depends on T001's raised limit)
+- **Alternatives**: PARALLEL (not applicable - tasks are sequential)
+- **Context**: 2 sequential tasks with dependencies

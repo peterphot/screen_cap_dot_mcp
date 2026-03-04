@@ -17,10 +17,131 @@ import type { Page } from "puppeteer-core";
 import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { ensurePage } from "../browser.js";
 import { clearRefs, allocateRef, getAllRefs, hasRefs } from "../ref-store.js";
-import { batchGetBoundingBoxes } from "../cdp-helpers.js";
+import { batchGetBoundingBoxes, getBatchLimit } from "../cdp-helpers.js";
 import { filterTree, formatA11yTree } from "../util/a11y-formatter.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 import logger from "../util/logger.js";
+
+// ── Ref role tracking (for priority filtering) ───────────────────────────
+
+/** Maps ref string (e.g. "e1") to a11y role (e.g. "button"). */
+const refRoles = new Map<string, string>();
+
+/** Clear the refRoles map. Called alongside clearRefs during snapshot. */
+export function clearRefRoles(): void {
+  refRoles.clear();
+}
+
+/** Set the role for a ref. Called by annotateTreeWithRefs. */
+export function setRefRole(ref: string, role: string): void {
+  refRoles.set(ref, role);
+}
+
+/** Return a snapshot (shallow copy) of all ref role mappings. */
+export function getRefRoles(): Map<string, string> {
+  return new Map(refRoles);
+}
+
+// ── Priority-based ref filtering ─────────────────────────────────────────
+
+/**
+ * Role priority tiers for annotation filtering.
+ * Lower number = higher priority (kept first when filtering).
+ */
+const ROLE_PRIORITY: Record<string, number> = {
+  // Tier 1: Primary interactive elements
+  button: 1,
+  link: 1,
+  textbox: 1,
+  combobox: 1,
+  searchbox: 1,
+  spinbutton: 1,
+  slider: 1,
+  switch: 1,
+  // Tier 2: Secondary interactive elements
+  checkbox: 2,
+  radio: 2,
+  menuitem: 2,
+  tab: 2,
+  option: 2,
+  listbox: 2,
+  menu: 2,
+  menubar: 2,
+  tablist: 2,
+  treeitem: 2,
+  // Tier 3: Containers and landmarks
+  navigation: 3,
+  dialog: 3,
+  alertdialog: 3,
+  toolbar: 3,
+  form: 3,
+  // Tier 4: Informational
+  heading: 4,
+  img: 4,
+  alert: 4,
+  status: 4,
+  tooltip: 4,
+  // Tier 5: Structural (low priority)
+  list: 5,
+  listitem: 5,
+  table: 5,
+  row: 5,
+  group: 5,
+  region: 5,
+  // Tier 6: Low-value for annotation (filtered first)
+  cell: 6,
+  gridcell: 6,
+  columnheader: 6,
+  rowheader: 6,
+  StaticText: 6,
+  generic: 6,
+  none: 6,
+  paragraph: 6,
+};
+
+/** Default priority for roles not in the lookup table. */
+const DEFAULT_PRIORITY = 5;
+
+/**
+ * Filter refs by a11y role priority, keeping the most interactive elements.
+ *
+ * Pure function: takes the ref map, role map, and limit as parameters.
+ * Returns the filtered ref map and metadata about the filtering.
+ *
+ * @param refMap - Map of ref -> backendNodeId (from getAllRefs)
+ * @param roles - Map of ref -> role (from getRefRoles)
+ * @param limit - Maximum number of refs to keep
+ */
+export function filterRefsByPriority(
+  refMap: Map<string, number>,
+  roles: Map<string, string>,
+  limit: number,
+): { filtered: Map<string, number>; totalCount: number; wasFiltered: boolean } {
+  const totalCount = refMap.size;
+
+  if (totalCount <= limit) {
+    return { filtered: new Map(refMap), totalCount, wasFiltered: false };
+  }
+
+  // Build sortable entries with priority
+  const entries = [...refMap.entries()].map(([ref, nodeId]) => {
+    const role = roles.get(ref);
+    const priority = role ? (ROLE_PRIORITY[role] ?? DEFAULT_PRIORITY) : DEFAULT_PRIORITY + 1;
+    return { ref, nodeId, priority };
+  });
+
+  // Sort by priority (lower = higher priority), stable sort preserves ref order within same tier
+  entries.sort((a, b) => a.priority - b.priority);
+
+  // Take top N
+  const kept = entries.slice(0, limit);
+  const filtered = new Map<string, number>();
+  for (const { ref, nodeId } of kept) {
+    filtered.set(ref, nodeId);
+  }
+
+  return { filtered, totalCount, wasFiltered: true };
+}
 
 /** Result shape returned by MCP tool handlers. */
 type ToolResult = {
@@ -53,7 +174,12 @@ export function annotateTreeWithRefs(node: A11ySnapshotNode, depth = 0): void {
   if (depth > MAX_ANNOTATE_DEPTH) return;
 
   if (typeof node.backendNodeId === "number") {
-    node.ref = allocateRef(node.backendNodeId);
+    const ref = allocateRef(node.backendNodeId);
+    node.ref = ref;
+    // Track role for priority filtering in annotated screenshots
+    if (node.role) {
+      refRoles.set(ref, node.role);
+    }
   }
   delete node.backendNodeId;
   delete node.loaderId;
@@ -75,7 +201,20 @@ async function takeAnnotatedScreenshot(
   page: Page,
 ): Promise<ToolResult> {
   // Get all refs and their bounding boxes
-  const refMap = getAllRefs(); // Map<string, number> (ref -> backendNodeId)
+  const allRefMap = getAllRefs(); // Map<string, number> (ref -> backendNodeId)
+  const limit = getBatchLimit();
+
+  // Apply priority filtering if ref count exceeds batch limit
+  const { filtered: refMap, totalCount, wasFiltered } = filterRefsByPriority(
+    allRefMap,
+    getRefRoles(),
+    limit,
+  );
+
+  if (wasFiltered) {
+    logger.debug(`Annotated screenshot: filtered ${refMap.size} of ${totalCount} refs (batch limit ${limit})`);
+  }
+
   const backendNodeIds = [...refMap.values()];
   const bboxMap = await batchGetBoundingBoxes(backendNodeIds);
 
@@ -117,9 +256,20 @@ async function takeAnnotatedScreenshot(
     }, labels);
 
     const base64 = (await page.screenshot({ encoding: "base64" })) as string;
-    return {
-      content: [{ type: "image" as const, data: base64, mimeType: "image/png" as const }],
-    };
+
+    const content: ToolResult["content"] = [
+      { type: "image" as const, data: base64, mimeType: "image/png" as const },
+    ];
+
+    // Include filtering note when elements were filtered
+    if (wasFiltered) {
+      content.push({
+        type: "text" as const,
+        text: `Note: Annotated ${refMap.size} of ${totalCount} interactive elements (filtered by role priority to stay within batch limit).`,
+      });
+    }
+
+    return { content };
   } finally {
     try {
       await page.evaluate(() => {
@@ -250,6 +400,7 @@ export function registerObservationTools(server: McpServer): void {
       try {
         const page = await ensurePage();
         clearRefs();
+        clearRefRoles();
         const snapshot = await page.accessibility.snapshot({
           interestingOnly: interestingOnly ?? true,
         });
