@@ -137,7 +137,14 @@ export class FlowRunner {
           if (snap) cachedSnapshot = snap as A11ySnapshotNode;
         }
 
-        await this.executeStep(page, step, outputDir, i, cachedSnapshot);
+        // Determine animation for this step:
+        // - If step has explicit `animate`, use it
+        // - Otherwise, default to true when recording
+        const stepAnimate = "animate" in step && step.animate !== undefined
+          ? (step.animate as boolean)
+          : shouldRecord;
+
+        await this.executeStep(page, step, outputDir, i, cachedSnapshot, stepAnimate);
         result.success = true;
 
         // Capture labeled screenshot/a11y if this step has a label
@@ -203,8 +210,9 @@ export class FlowRunner {
 
   private async executeStep(
     page: Page, step: FlowStep, outputDir: string, stepIndex: number,
-    cachedSnapshot?: A11ySnapshotNode,
+    cachedSnapshot?: A11ySnapshotNode, shouldAnimate?: boolean,
   ): Promise<void> {
+    const animateOpts = shouldAnimate ? { animate: true } : undefined;
     switch (step.action) {
       case "navigate": {
         const urlResult = validateNavigationUrl(step.url);
@@ -223,14 +231,14 @@ export class FlowRunner {
         if (step.match) {
           const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
           const resolved = await resolveMatch(step.match, opts);
-          await clickByBackendNodeId(resolved.backendNodeId);
+          await clickByBackendNodeId(resolved.backendNodeId, animateOpts);
         } else {
-          await performClick(step.selector, step.ref, page);
+          await performClick(step.selector, step.ref, page, animateOpts);
         }
         break;
 
       case "click_at":
-        await clickAtCoordinates(step.x, step.y);
+        await clickAtCoordinates(step.x, step.y, animateOpts);
         break;
 
       case "type":
@@ -247,14 +255,14 @@ export class FlowRunner {
         if (step.match) {
           const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
           const resolved = await resolveMatch(step.match, opts);
-          await hoverByBackendNodeId(resolved.backendNodeId);
+          await hoverByBackendNodeId(resolved.backendNodeId, animateOpts);
         } else {
-          await performHover(step.selector, step.ref, page);
+          await performHover(step.selector, step.ref, page, animateOpts);
         }
         break;
 
       case "hover_at":
-        await hoverAtCoordinates(step.x, step.y);
+        await hoverAtCoordinates(step.x, step.y, animateOpts);
         break;
 
       case "press_key":
@@ -341,7 +349,7 @@ export class FlowRunner {
         // propagates up and fails the entire conditional step.
         for (let j = 0; j < branchSteps.length; j++) {
           const nestedStep = branchSteps[j];
-          await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot);
+          await this.executeStep(page, nestedStep, outputDir, stepIndex, branchSnapshot, shouldAnimate);
           // Invalidate snapshot after any step that mutates the page
           if (["click", "click_at", "type", "navigate", "evaluate", "press_key", "scroll", "hover", "hover_at"].includes(nestedStep.action)) {
             branchSnapshot = undefined;

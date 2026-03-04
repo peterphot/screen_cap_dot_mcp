@@ -16,6 +16,13 @@
 import type { CDPSession } from "puppeteer-core";
 import { ensureCDPSession, ensurePage } from "./browser.js";
 import logger from "./util/logger.js";
+import { animateMouseTo, setMousePosition } from "./util/mouse-animator.js";
+
+/** Options for click and hover operations. */
+export interface InteractionOptions {
+  /** When true, smoothly animate the cursor to the target before interacting. */
+  animate?: boolean;
+}
 
 /** CDP modifier flag for the Control key. */
 export const CTRL_MODIFIER = 2;
@@ -114,17 +121,23 @@ export async function getElementCenter(
  * Click an element by backendNodeId.
  *
  * Scrolls into view, calculates center, then dispatches mousePressed and
- * mouseReleased events at the center coordinates.
+ * mouseReleased events at the center coordinates. When `animate` is true,
+ * smoothly moves the cursor to the target before clicking.
  *
  * @returns The coordinates where the click was dispatched
  */
 export async function clickByBackendNodeId(
   backendNodeId: number,
+  options?: InteractionOptions,
 ): Promise<{ x: number; y: number }> {
   assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const center = await getElementCenter(backendNodeId);
     const cdp = await ensureCDPSession();
+
+    if (options?.animate) {
+      await animateMouseTo(center.x, center.y);
+    }
 
     await cdp.send("Input.dispatchMouseEvent", {
       type: "mousePressed",
@@ -142,6 +155,7 @@ export async function clickByBackendNodeId(
       clickCount: 1,
     });
 
+    setMousePosition(center.x, center.y);
     return center;
   });
 }
@@ -191,17 +205,23 @@ export async function typeByBackendNodeId(
  * Hover over an element by backendNodeId.
  *
  * Scrolls into view, calculates center, then dispatches a mouseMoved event
- * at the center coordinates.
+ * at the center coordinates. When `animate` is true, smoothly moves the
+ * cursor to the target before hovering.
  *
  * @returns The coordinates where the hover was dispatched
  */
 export async function hoverByBackendNodeId(
   backendNodeId: number,
+  options?: InteractionOptions,
 ): Promise<{ x: number; y: number }> {
   assertValidNodeId(backendNodeId);
   return wrapStaleNodeError(async () => {
     const center = await getElementCenter(backendNodeId);
     const cdp = await ensureCDPSession();
+
+    if (options?.animate) {
+      await animateMouseTo(center.x, center.y);
+    }
 
     await cdp.send("Input.dispatchMouseEvent", {
       type: "mouseMoved",
@@ -211,6 +231,7 @@ export async function hoverByBackendNodeId(
       clickCount: 0,
     });
 
+    setMousePosition(center.x, center.y);
     return center;
   });
 }
@@ -223,7 +244,8 @@ export async function hoverByBackendNodeId(
  * Dispatches mousePressed and mouseReleased events at (x, y) without
  * requiring an element reference. Useful for Canvas-rendered charts,
  * custom visualizations, and elements that lack stable CSS selectors
- * or accessibility refs.
+ * or accessibility refs. When `animate` is true, smoothly moves the
+ * cursor to the target before clicking.
  *
  * @returns The coordinates where the click was dispatched
  * @throws RangeError if x or y is negative or NaN
@@ -231,8 +253,14 @@ export async function hoverByBackendNodeId(
 export async function clickAtCoordinates(
   x: number,
   y: number,
+  options?: InteractionOptions,
 ): Promise<{ x: number; y: number }> {
   assertValidCoordinates(x, y);
+
+  if (options?.animate) {
+    await animateMouseTo(x, y);
+  }
+
   const cdp = await ensureCDPSession();
 
   await cdp.send("Input.dispatchMouseEvent", {
@@ -251,6 +279,7 @@ export async function clickAtCoordinates(
     clickCount: 1,
   });
 
+  setMousePosition(x, y);
   return { x, y };
 }
 
@@ -260,7 +289,8 @@ export async function clickAtCoordinates(
  * Dispatches a mouseMoved event at (x, y) without requiring an element
  * reference. Useful for triggering tooltips on Canvas charts, custom
  * visualizations, and elements that lack stable CSS selectors or
- * accessibility refs.
+ * accessibility refs. When `animate` is true, smoothly moves the
+ * cursor to the target before hovering.
  *
  * @returns The coordinates where the hover was dispatched
  * @throws RangeError if x or y is negative or NaN
@@ -268,8 +298,14 @@ export async function clickAtCoordinates(
 export async function hoverAtCoordinates(
   x: number,
   y: number,
+  options?: InteractionOptions,
 ): Promise<{ x: number; y: number }> {
   assertValidCoordinates(x, y);
+
+  if (options?.animate) {
+    await animateMouseTo(x, y);
+  }
+
   const cdp = await ensureCDPSession();
 
   await cdp.send("Input.dispatchMouseEvent", {
@@ -280,6 +316,7 @@ export async function hoverAtCoordinates(
     clickCount: 0,
   });
 
+  setMousePosition(x, y);
   return { x, y };
 }
 

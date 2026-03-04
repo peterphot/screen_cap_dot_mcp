@@ -921,6 +921,101 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // ── animate field on click/hover/click_at/hover_at ──────────────────
+
+  it("validates a click step with animate: true", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      selector: ".btn",
+      animate: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with animate: false", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      selector: ".btn",
+      animate: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step without animate (optional)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      selector: ".btn",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover step with animate: true", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      selector: ".menu-item",
+      animate: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click_at step with animate: true", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 100,
+      y: 200,
+      animate: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click_at step with animate: false", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click_at",
+      x: 100,
+      y: 200,
+      animate: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover_at step with animate: true", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 300,
+      y: 400,
+      animate: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover_at step with animate: false", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover_at",
+      x: 300,
+      y: 400,
+      animate: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with match and animate", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button", name: "Submit" },
+      animate: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a hover step with match and animate", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      match: { role: "menuitem", name: "File" },
+      animate: false,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("RecordingConfigSchema", () => {

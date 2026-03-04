@@ -10,24 +10,30 @@ import type { Page } from "puppeteer-core";
 import { ensurePage } from "../browser.js";
 import { validateSelectorOrRef } from "./validate-selector-or-ref.js";
 import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
+import type { InteractionOptions } from "../cdp-helpers.js";
 
 /**
  * Click an element by selector or ref.
  * For refs, uses CDP clickByBackendNodeId.
  * For selectors, waits for visibility then clicks via Puppeteer.
  *
+ * Note: the `animate` option only applies to the ref-based CDP path.
+ * Selector-based interactions use Puppeteer's own mouse movement.
+ *
  * @param page - Optional page instance (will call ensurePage() if not provided)
+ * @param options - Optional interaction options (e.g. animate for smooth cursor movement)
  */
 export async function performClick(
   selector?: string,
   ref?: string,
   page?: Page,
+  options?: InteractionOptions,
 ): Promise<void> {
   const resolved = validateSelectorOrRef(selector, ref);
   if ("error" in resolved) throw new Error(resolved.error);
 
   if (resolved.type === "ref") {
-    await clickByBackendNodeId(resolved.backendNodeId);
+    await clickByBackendNodeId(resolved.backendNodeId, options);
   } else {
     const p = page ?? await ensurePage();
     await p.waitForSelector(resolved.value, { visible: true });
@@ -71,18 +77,23 @@ export async function performType(
  * For refs, uses CDP hoverByBackendNodeId.
  * For selectors, waits for visibility then hovers via Puppeteer.
  *
+ * Note: the `animate` option only applies to the ref-based CDP path.
+ * Selector-based interactions use Puppeteer's own mouse movement.
+ *
  * @param page - Optional page instance (will call ensurePage() if not provided)
+ * @param options - Optional interaction options (e.g. animate for smooth cursor movement)
  */
 export async function performHover(
   selector?: string,
   ref?: string,
   page?: Page,
+  options?: InteractionOptions,
 ): Promise<void> {
   const resolved = validateSelectorOrRef(selector, ref);
   if ("error" in resolved) throw new Error(resolved.error);
 
   if (resolved.type === "ref") {
-    await hoverByBackendNodeId(resolved.backendNodeId);
+    await hoverByBackendNodeId(resolved.backendNodeId, options);
   } else {
     const p = page ?? await ensurePage();
     await p.waitForSelector(resolved.value, { visible: true });

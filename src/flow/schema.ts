@@ -65,6 +65,7 @@ const ClickStep = z.object({
   selector: z.string().min(1).optional(),
   ref: z.string().min(1).optional(),
   match: MatchSelectorSchema.optional(),
+  animate: z.boolean().optional(),
   label: z.string().optional(),
 }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 
@@ -83,6 +84,7 @@ const HoverStep = z.object({
   selector: z.string().min(1).optional(),
   ref: z.string().min(1).optional(),
   match: MatchSelectorSchema.optional(),
+  animate: z.boolean().optional(),
   label: z.string().optional(),
 }).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 
@@ -90,6 +92,7 @@ const ClickAtStep = z.object({
   action: z.literal("click_at"),
   x: z.number().nonnegative(),
   y: z.number().nonnegative(),
+  animate: z.boolean().optional(),
   label: z.string().optional(),
 });
 
@@ -97,6 +100,7 @@ const HoverAtStep = z.object({
   action: z.literal("hover_at"),
   x: z.number().nonnegative(),
   y: z.number().nonnegative(),
+  animate: z.boolean().optional(),
   label: z.string().optional(),
 });
 
