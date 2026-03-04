@@ -17,9 +17,17 @@ import { readdir, readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { FlowDefinitionSchema } from "../flow/schema.js";
+import type { FlowDefinition } from "../flow/schema.js";
 import { FlowRunner } from "../flow/runner.js";
 import { FlowValidator } from "../flow/validator.js";
 import logger from "../util/logger.js";
+
+// ── Shared result type ───────────────────────────────────────────────────
+
+type ErrorResult = {
+  content: [{ type: "text"; text: string }];
+  isError: true;
+};
 
 // ── Path confinement ─────────────────────────────────────────────────────
 
@@ -40,6 +48,121 @@ async function confinePathToFlowDir(
   return confinePath(filePath, getFlowsDir());
 }
 
+// ── Shared helpers ───────────────────────────────────────────────────────
+
+/**
+ * Validate a flow name for path traversal sequences.
+ * Returns an ErrorResult if the name is invalid, undefined otherwise.
+ */
+function validateFlowName(name: string): ErrorResult | undefined {
+  if (name.includes("/") || name.includes("\\") || name.includes("..")) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: "Invalid flow name: must not contain '/', '\\', or '..'",
+        },
+      ],
+      isError: true,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Load a flow definition from a named file or inline object.
+ * Returns the parsed FlowDefinition on success, or an ErrorResult on failure.
+ */
+async function loadFlowDefinition(
+  name?: string,
+  flow?: unknown,
+): Promise<FlowDefinition | ErrorResult> {
+  if (flow) {
+    // Inline flow definition
+    const parsed = FlowDefinitionSchema.safeParse(flow);
+    if (!parsed.success) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Invalid flow definition: ${parsed.error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    return parsed.data;
+  }
+
+  if (name) {
+    // Reject path traversal sequences
+    const nameError = validateFlowName(name);
+    if (nameError) return nameError;
+
+    // Load from flows/ directory with path confinement
+    const flowsDir = getFlowsDir();
+    const flowPath = join(flowsDir, `${name}.json`);
+    const pathResult = await confinePathToFlowDir(flowPath);
+    if ("error" in pathResult) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error: ${pathResult.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let rawJson: string;
+    try {
+      rawJson = await readFile(pathResult.resolvedPath, "utf-8");
+    } catch {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Flow not found: ${name}.json. Use browser_list_flows to see available flows.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const parsed = FlowDefinitionSchema.safeParse(JSON.parse(rawJson));
+    if (!parsed.success) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Invalid flow file ${flowPath}: ${parsed.error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    return parsed.data;
+  }
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: "Error: provide either 'name' (to load from flows/) or 'flow' (inline definition).",
+      },
+    ],
+    isError: true,
+  };
+}
+
+/**
+ * Check if a loadFlowDefinition result is an error.
+ */
+function isErrorResult(result: FlowDefinition | ErrorResult): result is ErrorResult {
+  return "isError" in result;
+}
+
 /**
  * Register all flow tools on the given MCP server.
  */
@@ -56,92 +179,9 @@ export function registerFlowTools(server: McpServer): void {
     },
     async ({ name, flow, record }) => {
       try {
-        let definition;
-
-        if (flow) {
-          // Inline flow definition
-          const parsed = FlowDefinitionSchema.safeParse(flow);
-          if (!parsed.success) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Invalid flow definition: ${parsed.error.message}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          definition = parsed.data;
-        } else if (name) {
-          // Reject path traversal sequences
-          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "Invalid flow name: must not contain '/', '\\', or '..'",
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          // Load from flows/ directory with path confinement
-          const flowsDir = getFlowsDir();
-          const flowPath = join(flowsDir, `${name}.json`);
-          const pathResult = await confinePathToFlowDir(flowPath);
-          if ("error" in pathResult) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Error: ${pathResult.error}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          let rawJson: string;
-          try {
-            rawJson = await readFile(pathResult.resolvedPath, "utf-8");
-          } catch {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Flow not found: ${name}.json. Use browser_list_flows to see available flows.`,
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          const parsed = FlowDefinitionSchema.safeParse(JSON.parse(rawJson));
-          if (!parsed.success) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Invalid flow file ${flowPath}: ${parsed.error.message}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          definition = parsed.data;
-        } else {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: provide either 'name' (to load from flows/) or 'flow' (inline definition).",
-              },
-            ],
-            isError: true,
-          };
-        }
+        const loaded = await loadFlowDefinition(name, flow);
+        if (isErrorResult(loaded)) return loaded;
+        const definition = loaded;
 
         const runner = new FlowRunner();
         const result = await runner.run(definition, record);
@@ -323,96 +363,13 @@ export function registerFlowTools(server: McpServer): void {
     {
       name: z.string().optional().describe("Name of a saved flow to load from flows/ directory"),
       flow: z.unknown().optional().describe("Inline flow definition object (alternative to name)"),
-      timeout: z.number().nonnegative().optional().describe("Timeout in ms for each selector check (default: 5000)"),
+      timeout: z.number().nonnegative().finite().max(300_000).optional().describe("Timeout in ms for each selector check (default: 5000)"),
     },
     async ({ name, flow, timeout }) => {
       try {
-        let definition;
-
-        if (flow) {
-          // Inline flow definition
-          const parsed = FlowDefinitionSchema.safeParse(flow);
-          if (!parsed.success) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Invalid flow definition: ${parsed.error.message}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          definition = parsed.data;
-        } else if (name) {
-          // Reject path traversal sequences
-          if (name.includes("/") || name.includes("\\") || name.includes("..")) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "Invalid flow name: must not contain '/', '\\', or '..'",
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          // Load from flows/ directory with path confinement
-          const flowsDir = getFlowsDir();
-          const flowPath = join(flowsDir, `${name}.json`);
-          const pathResult = await confinePathToFlowDir(flowPath);
-          if ("error" in pathResult) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Error: ${pathResult.error}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          let rawJson: string;
-          try {
-            rawJson = await readFile(pathResult.resolvedPath, "utf-8");
-          } catch {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Flow not found: ${name}.json. Use browser_list_flows to see available flows.`,
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          const parsed = FlowDefinitionSchema.safeParse(JSON.parse(rawJson));
-          if (!parsed.success) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Invalid flow file ${flowPath}: ${parsed.error.message}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          definition = parsed.data;
-        } else {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: provide either 'name' (to load from flows/) or 'flow' (inline definition).",
-              },
-            ],
-            isError: true,
-          };
-        }
+        const loaded = await loadFlowDefinition(name, flow);
+        if (isErrorResult(loaded)) return loaded;
+        const definition = loaded;
 
         const validator = new FlowValidator();
         const report = await validator.validate(definition, { timeout: timeout ?? 5000 });

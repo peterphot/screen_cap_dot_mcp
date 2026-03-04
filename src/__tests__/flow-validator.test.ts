@@ -248,6 +248,7 @@ describe("FlowValidator", () => {
       expect(report.steps[0].status).toBe("ok");
       expect(mockResolveMatch).toHaveBeenCalledWith(
         { role: "button", name: "Submit" },
+        { snapshot: { role: "WebArea" } },
       );
     });
 

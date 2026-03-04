@@ -21,6 +21,7 @@
 import { ensurePage } from "../browser.js";
 import { resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
+import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
 import logger from "../util/logger.js";
 
@@ -62,19 +63,34 @@ export class FlowValidator {
     const page = await ensurePage();
     const stepResults: ValidationStepResult[] = [];
 
+    // Cache a single a11y snapshot if any match steps exist
+    const hasMatchSteps = flow.steps.some(
+      (s) => (s.action === "click" || s.action === "type" || s.action === "hover") && "match" in s,
+    );
+    let cachedSnapshot: A11ySnapshotNode | undefined;
+    if (hasMatchSteps) {
+      const raw = await page.accessibility.snapshot({ interestingOnly: false });
+      if (raw) {
+        cachedSnapshot = raw as A11ySnapshotNode;
+      }
+    }
+
     for (let i = 0; i < flow.steps.length; i++) {
       const step = flow.steps[i];
-      const result = await this.validateStep(page, step, i, timeout);
+      const result = await this.validateStep(page, step, i, timeout, cachedSnapshot);
       stepResults.push(result);
     }
 
     const valid = stepResults.every((s) => s.status !== "missing");
 
+    const counts = stepResults.reduce(
+      (acc, s) => { acc[s.status]++; return acc; },
+      { ok: 0, missing: 0, skip: 0 },
+    );
+
     logger.info(
       `Flow "${flow.name}" validation: ${valid ? "PASS" : "FAIL"} ` +
-        `(${stepResults.filter((s) => s.status === "ok").length} ok, ` +
-        `${stepResults.filter((s) => s.status === "missing").length} missing, ` +
-        `${stepResults.filter((s) => s.status === "skip").length} skip)`,
+        `(${counts.ok} ok, ${counts.missing} missing, ${counts.skip} skip)`,
     );
 
     return { valid, steps: stepResults };
@@ -87,6 +103,7 @@ export class FlowValidator {
     step: FlowStep,
     index: number,
     timeout: number,
+    cachedSnapshot?: A11ySnapshotNode,
   ): Promise<ValidationStepResult> {
     const base: Pick<ValidationStepResult, "index" | "action" | "label"> = {
       index,
@@ -96,7 +113,7 @@ export class FlowValidator {
 
     // Check if this is a targetable step (click, type, hover with selector/ref/match)
     if (this.isTargetableStep(step)) {
-      return this.validateTargetableStep(page, step, base, timeout);
+      return this.validateTargetableStep(page, step, base, timeout, cachedSnapshot);
     }
 
     // Check if this is a wait/selector step
@@ -122,10 +139,11 @@ export class FlowValidator {
     step: FlowStep,
     base: Pick<ValidationStepResult, "index" | "action" | "label">,
     timeout: number,
+    cachedSnapshot?: A11ySnapshotNode,
   ): Promise<ValidationStepResult> {
     // Match-based
     if ("match" in step && step.match) {
-      return this.validateMatchTarget(step.match, base);
+      return this.validateMatchTarget(step.match, base, cachedSnapshot);
     }
 
     // Ref-based
@@ -178,9 +196,10 @@ export class FlowValidator {
   private async validateMatchTarget(
     match: { role?: string; name?: string; index?: number },
     base: Pick<ValidationStepResult, "index" | "action" | "label">,
+    cachedSnapshot?: A11ySnapshotNode,
   ): Promise<ValidationStepResult> {
     try {
-      await resolveMatch(match);
+      await resolveMatch(match, cachedSnapshot ? { snapshot: cachedSnapshot } : undefined);
       return { ...base, status: "ok" };
     } catch (err) {
       return {
