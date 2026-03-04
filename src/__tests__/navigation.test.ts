@@ -160,7 +160,7 @@ beforeEach(async () => {
 // ── Tool Registration ───────────────────────────────────────────────────
 
 describe("registerNavigationTools", () => {
-  it("registers all 12 tools on the server", () => {
+  it("registers all 13 tools on the server", () => {
     const tools = getRegisteredTools(server);
     const toolNames = Object.keys(tools);
 
@@ -176,7 +176,8 @@ describe("registerNavigationTools", () => {
     expect(toolNames).toContain("browser_click_at");
     expect(toolNames).toContain("browser_hover_at");
     expect(toolNames).toContain("browser_press_key");
-    expect(toolNames).toHaveLength(12);
+    expect(toolNames).toContain("browser_scroll_to_text");
+    expect(toolNames).toHaveLength(13);
   });
 
   it("each tool has a description", () => {
@@ -971,5 +972,88 @@ describe("browser_press_key", () => {
     // Should contain the truncated key (50 chars + ellipsis), not the full 80-char key
     expect(result.content[0].text).toContain("A".repeat(50));
     expect(result.content[0].text).not.toContain("A".repeat(80));
+  });
+});
+
+// ── browser_scroll_to_text ──────────────────────────────────────────────
+
+describe("browser_scroll_to_text", () => {
+  it("is registered as a tool on the server", () => {
+    const tools = getRegisteredTools(server);
+    expect(Object.keys(tools)).toContain("browser_scroll_to_text");
+  });
+
+  it("has a description", () => {
+    const tools = getRegisteredTools(server);
+    expect(tools["browser_scroll_to_text"].description).toBeTruthy();
+  });
+
+  it("scrolls to text and returns success message", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Insights Table" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(mockEnsurePage).toHaveBeenCalled();
+    expect(mockPage.evaluate).toHaveBeenCalled();
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toContain("Insights Table");
+    expect(result.isError).toBeFalsy();
+  });
+
+  it("passes lowercased text to page.evaluate for case-insensitive matching", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    await handler(
+      { text: "Revenue Summary" },
+      { signal: new AbortController().signal },
+    );
+
+    const callArgs = mockPage.evaluate.mock.calls[0];
+    expect(callArgs[1]).toBe("revenue summary");
+  });
+
+  it("returns error when text is not found on page", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(false);
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Nonexistent Section" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Nonexistent Section");
+    expect(result.content[0].text).toContain("not found");
+  });
+
+  it("returns error text when page.evaluate fails (does not throw)", async () => {
+    mockPage.evaluate.mockRejectedValueOnce(new Error("Page context destroyed"));
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Some text" },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Page context destroyed");
+  });
+
+  it("accepts optional timeout parameter", async () => {
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const handler = getToolHandler(server, "browser_scroll_to_text");
+    const result = await handler(
+      { text: "Footer", timeout: 5000 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("Footer");
   });
 });
