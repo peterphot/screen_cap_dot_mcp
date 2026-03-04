@@ -6,7 +6,7 @@
  * Steps can have optional `label` for naming screenshots/moments.
  *
  * Supported actions: navigate, click, click_at, type, hover, hover_at, press_key,
- * wait, scroll, screenshot, a11y_snapshot, evaluate, sleep, if_visible, if_not_visible.
+ * wait, scroll, scroll_to_text, screenshot, a11y_snapshot, evaluate, sleep, if_visible, if_not_visible.
  *
  * Element targeting: click, type, and hover steps accept exactly one of:
  * - `selector` (CSS selector)
@@ -189,6 +189,13 @@ const SleepStep = z.object({
   label: z.string().optional(),
 });
 
+const ScrollToTextStep = z.object({
+  action: z.literal("scroll_to_text"),
+  text: z.string().min(1).max(1000),
+  timeout: z.number().nonnegative().finite().max(300_000).optional(),
+  label: z.string().optional(),
+});
+
 // ── Conditional step nesting depth limit ─────────────────────────────────
 
 /** Maximum allowed nesting depth for conditional steps (if_visible, if_not_visible). */
@@ -240,6 +247,7 @@ function buildFlowStepSchema(depth: number): z.ZodType {
     A11ySnapshotStep,
     EvaluateStep,
     SleepStep,
+    ScrollToTextStep,
   ] as const;
 
   if (depth <= 0) {

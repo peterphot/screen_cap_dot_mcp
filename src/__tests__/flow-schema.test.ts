@@ -1016,7 +1016,112 @@ describe("FlowStepSchema", () => {
     });
     expect(result.success).toBe(true);
   });
-});
+
+  // ── scroll_to_text step ─────────────────────────────────────────────
+
+  it("validates a scroll_to_text step with text only", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Insights Table",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a scroll_to_text step with text and label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Revenue Summary",
+      label: "scroll-to-revenue",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a scroll_to_text step with timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Footer Section",
+      timeout: 5000,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a scroll_to_text step with all optional fields", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Contact Us",
+      timeout: 15000,
+      label: "scroll-to-contact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a scroll_to_text step without text", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a scroll_to_text step with empty text", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a scroll_to_text step with text exceeding 1000 chars", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "A".repeat(1001),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a scroll_to_text step with text at max length (1000 chars)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "A".repeat(1000),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a scroll_to_text step with negative timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Some text",
+      timeout: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a scroll_to_text step with Infinity timeout", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Some text",
+      timeout: Infinity,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a scroll_to_text step with timeout exceeding max (300000)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Some text",
+      timeout: 300_001,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a scroll_to_text step with timeout at max (300000)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "scroll_to_text",
+      text: "Some text",
+      timeout: 300_000,
+    });
+    expect(result.success).toBe(true);
+  });
+});  // end describe("FlowStepSchema")
 
 describe("RecordingConfigSchema", () => {
   it("validates enabled recording", () => {
@@ -1134,6 +1239,18 @@ describe("FlowDefinitionSchema", () => {
           ],
           else: [],
         },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a flow with scroll_to_text step", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "scroll-to-text-flow",
+      steps: [
+        { action: "navigate", url: "https://example.com" },
+        { action: "scroll_to_text", text: "Insights Table", label: "find-insights" },
+        { action: "screenshot", label: "after-scroll" },
       ],
     });
     expect(result.success).toBe(true);
