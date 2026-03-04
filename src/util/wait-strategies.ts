@@ -77,7 +77,7 @@ export async function smartWait(
     } catch (err) {
       if (err instanceof TimeoutError) {
         // Swallow timeout errors — indicator may still be present but we move on
-        logger.debug(`Loading indicator wait timed out: ${(err as Error).message}`);
+        logger.debug(`Loading indicator wait timed out: ${err.message}`);
       } else {
         throw err;
       }
