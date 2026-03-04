@@ -160,8 +160,8 @@ beforeEach(() => {
 
   mockEnsurePage.mockResolvedValue(mockPage);
   mockSmartWait.mockResolvedValue({ elapsedMs: 100 });
-  mockClickAtCoordinates.mockResolvedValue(undefined);
-  mockHoverAtCoordinates.mockResolvedValue(undefined);
+  mockClickAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
+  mockHoverAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
   mockSafeWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
   mockRealpath.mockImplementation((p: string) => Promise.resolve(p));

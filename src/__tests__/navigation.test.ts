@@ -135,8 +135,8 @@ beforeEach(async () => {
   mockClickByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
   mockTypeByBackendNodeId.mockResolvedValue(undefined);
   mockHoverByBackendNodeId.mockResolvedValue({ x: 100, y: 200 });
-  mockClickAtCoordinates.mockResolvedValue(undefined);
-  mockHoverAtCoordinates.mockResolvedValue(undefined);
+  mockClickAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
+  mockHoverAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
 
   mockEnsureBrowser.mockResolvedValue({});
   mockEnsurePage.mockResolvedValue(mockPage);
