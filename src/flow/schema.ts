@@ -7,16 +7,43 @@
  *
  * Supported actions: navigate, click, click_at, type, hover, hover_at, wait,
  * scroll, screenshot, a11y_snapshot, evaluate, sleep.
+ *
+ * Element targeting: click, type, and hover steps accept exactly one of:
+ * - `selector` (CSS selector)
+ * - `ref` (ref ID from a11y snapshot, e.g. "e3")
+ * - `match` (semantic a11y match: { role?, name?, index? })
  */
 
 import { z } from "zod";
 
+// ── Match selector schema ───────────────────────────────────────────────
+
+/**
+ * Semantic accessibility-based element selector.
+ * At least one of `role` or `name` must be provided.
+ */
+export const MatchSelectorSchema = z.object({
+  role: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  index: z.number().int().nonnegative().optional(),
+}).refine(
+  (d) => Boolean(d.role) || Boolean(d.name),
+  { message: "match requires at least one of role or name." },
+);
+
+export type MatchSelector = z.infer<typeof MatchSelectorSchema>;
+
 // ── Shared refinements ───────────────────────────────────────────────────
 
-/** XOR refinement: exactly one of selector or ref must be provided. */
-const requireSelectorXorRef = (d: { selector?: string; ref?: string }) =>
-  Boolean(d.selector) !== Boolean(d.ref);
-const SELECTOR_XOR_REF_MESSAGE = "Provide either selector or ref, not both or neither.";
+/**
+ * XOR refinement: exactly one of selector, ref, or match must be provided.
+ * This ensures steps use exactly one targeting mechanism.
+ */
+const requireExactlyOneTarget = (d: { selector?: string; ref?: string; match?: MatchSelector }) => {
+  const count = [Boolean(d.selector), Boolean(d.ref), Boolean(d.match)].filter(Boolean).length;
+  return count === 1;
+};
+const TARGET_XOR_MESSAGE = "Provide exactly one of selector, ref, or match.";
 
 // ── Step schemas ─────────────────────────────────────────────────────────
 
@@ -31,24 +58,27 @@ const ClickStep = z.object({
   action: z.literal("click"),
   selector: z.string().min(1).optional(),
   ref: z.string().min(1).optional(),
+  match: MatchSelectorSchema.optional(),
   label: z.string().optional(),
-}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
+}).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 
 const TypeStep = z.object({
   action: z.literal("type"),
   selector: z.string().min(1).optional(),
   ref: z.string().min(1).optional(),
+  match: MatchSelectorSchema.optional(),
   text: z.string(),
   clear: z.boolean().optional(),
   label: z.string().optional(),
-}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
+}).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 
 const HoverStep = z.object({
   action: z.literal("hover"),
   selector: z.string().min(1).optional(),
   ref: z.string().min(1).optional(),
+  match: MatchSelectorSchema.optional(),
   label: z.string().optional(),
-}).refine(requireSelectorXorRef, { message: SELECTOR_XOR_REF_MESSAGE });
+}).refine(requireExactlyOneTarget, { message: TARGET_XOR_MESSAGE });
 
 const ClickAtStep = z.object({
   action: z.literal("click_at"),

@@ -96,6 +96,12 @@ vi.mock("../ref-store.js", () => ({
   hasRefs: vi.fn(),
 }));
 
+const mockResolveMatch = vi.fn();
+
+vi.mock("../util/a11y-matcher.js", () => ({
+  resolveMatch: (...args: unknown[]) => mockResolveMatch(...args),
+}));
+
 // ── Mock page ────────────────────────────────────────────────────────────
 
 interface MockPage {
@@ -162,6 +168,7 @@ beforeEach(() => {
   mockSmartWait.mockResolvedValue({ elapsedMs: 100 });
   mockClickAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
   mockHoverAtCoordinates.mockResolvedValue({ x: 0, y: 0 });
+  mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
   mockSafeWriteFile.mockResolvedValue(undefined);
   mockMkdir.mockResolvedValue(undefined);
   mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
@@ -975,5 +982,166 @@ describe("coordinate-based steps", () => {
     expect(result.steps[0].label).toBe("tooltip-area");
     expect(mockHoverAtCoordinates).toHaveBeenCalledWith(500, 600);
     expect(result.steps[0].screenshotPath).toContain("tooltip-area");
+  });
+});
+
+// ── Match-based steps ────────────────────────────────────────────────────
+
+describe("match-based steps", () => {
+  const runner = new FlowRunner();
+
+  it("executes click step with match by resolving via a11y matcher", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "click-match",
+      steps: [{ action: "click", match: { role: "button", name: "Submit" } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "button", name: "Submit" },
+      undefined,
+    );
+    expect(mockClickByBackendNodeId).toHaveBeenCalledWith(100);
+  });
+
+  it("executes type step with match", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e2", backendNodeId: 200, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "type-match",
+      steps: [{ action: "type", match: { role: "textbox", name: "Search" }, text: "query" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "textbox", name: "Search" },
+      undefined,
+    );
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(200, "query", undefined);
+  });
+
+  it("executes type step with match and clear", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e3", backendNodeId: 300, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "type-match-clear",
+      steps: [{ action: "type", match: { role: "textbox" }, text: "new value", clear: true }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockTypeByBackendNodeId).toHaveBeenCalledWith(300, "new value", true);
+  });
+
+  it("executes hover step with match", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e4", backendNodeId: 400, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "hover-match",
+      steps: [{ action: "hover", match: { role: "menuitem", name: "File" } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "menuitem", name: "File" },
+      undefined,
+    );
+    expect(mockHoverByBackendNodeId).toHaveBeenCalledWith(400);
+  });
+
+  it("passes index to resolveMatch when specified", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e5", backendNodeId: 500, matchCount: 3 });
+
+    const flow: FlowDefinition = {
+      name: "click-match-index",
+      steps: [{ action: "click", match: { role: "button", name: "Column", index: 2 } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(true);
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "button", name: "Column", index: 2 },
+      undefined,
+    );
+  });
+
+  it("captures error when match resolution fails", async () => {
+    mockResolveMatch.mockRejectedValue(
+      new Error('No a11y node found matching { role="slider", name="Volume" }.'),
+    );
+
+    const flow: FlowDefinition = {
+      name: "match-fail",
+      steps: [{ action: "click", match: { role: "slider", name: "Volume" } }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[0].error).toContain("No a11y node found matching");
+  });
+
+  it("does not call selector or ref actions when match is used", async () => {
+    mockResolveMatch.mockResolvedValue({ ref: "e6", backendNodeId: 600, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "match-no-selector",
+      steps: [{ action: "click", match: { role: "link", name: "Home" } }],
+    };
+
+    await runner.run(flow);
+
+    // Should use backendNodeId-based click, not selector-based
+    expect(mockPage.waitForSelector).not.toHaveBeenCalled();
+    expect(mockPage.click).not.toHaveBeenCalled();
+  });
+
+  it("continues executing after match step failure", async () => {
+    mockResolveMatch.mockRejectedValueOnce(new Error("No match found"));
+
+    const flow: FlowDefinition = {
+      name: "match-continue",
+      steps: [
+        { action: "click", match: { role: "slider" } },
+        { action: "navigate", url: "https://example.com" },
+      ],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0].success).toBe(false);
+    expect(result.steps[1].success).toBe(true);
+  });
+
+  it("takes only 1 a11y snapshot when step has both match and label", async () => {
+    const fakeSnapshot = { role: "WebArea", name: "Test" };
+    mockPage.accessibility.snapshot.mockResolvedValue(fakeSnapshot);
+    mockResolveMatch.mockResolvedValue({ ref: "e1", backendNodeId: 100, matchCount: 1 });
+
+    const flow: FlowDefinition = {
+      name: "cache-snapshot",
+      steps: [{ action: "click", match: { role: "button", name: "Submit" }, label: "submit-click" }],
+    };
+
+    await runner.run(flow);
+
+    // Only 1 snapshot call — cached and shared between resolveMatch and captureArtifacts
+    expect(mockPage.accessibility.snapshot).toHaveBeenCalledTimes(1);
+    // resolveMatch should receive the snapshot via options
+    expect(mockResolveMatch).toHaveBeenCalledWith(
+      { role: "button", name: "Submit" },
+      { snapshot: fakeSnapshot },
+    );
   });
 });

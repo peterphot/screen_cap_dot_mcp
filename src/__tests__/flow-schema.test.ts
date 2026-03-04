@@ -384,6 +384,148 @@ describe("FlowStepSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // ── match selector on click/type/hover ─────────────────────────────
+
+  it("validates a click step with match", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button", name: "Submit" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with match role only", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "link" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with match name only", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { name: "Channel ROI" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with match and index", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button", name: "Column", index: 1 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a click step with match and label", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "link", name: "Channel ROI" },
+      label: "Navigate to Channel ROI",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a click step with match and selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button" },
+      selector: ".btn",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click step with match and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button" },
+      ref: "e1",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click step with empty match (no role or name)", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a click step with match having negative index", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "click",
+      match: { role: "button", index: -1 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a type step with match", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      match: { role: "textbox", name: "Search" },
+      text: "hello",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a type step with match and clear", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      match: { role: "textbox", name: "Email" },
+      text: "user@example.com",
+      clear: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a type step with match and selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      match: { role: "textbox" },
+      selector: "#search",
+      text: "hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a type step with match and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "type",
+      match: { role: "textbox" },
+      ref: "e3",
+      text: "hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("validates a hover step with match", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      match: { role: "menuitem", name: "File" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a hover step with match and selector", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      match: { role: "menuitem" },
+      selector: ".menu-item",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a hover step with match and ref", () => {
+    const result = FlowStepSchema.safeParse({
+      action: "hover",
+      match: { role: "menuitem" },
+      ref: "e5",
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── hover_at step ──────────────────────────────────────────────────
 
   it("validates a hover_at step with x, y", () => {
@@ -519,5 +661,20 @@ describe("FlowDefinitionSchema", () => {
       steps: [{ action: "invalid" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("validates a flow with match-based steps", () => {
+    const result = FlowDefinitionSchema.safeParse({
+      name: "match-flow",
+      description: "Flow using semantic selectors",
+      steps: [
+        { action: "navigate", url: "https://app.example.com" },
+        { action: "click", match: { role: "link", name: "Channel ROI" }, label: "nav-channel-roi" },
+        { action: "wait", strategy: "smart" },
+        { action: "type", match: { role: "textbox", name: "Search" }, text: "revenue", label: "search" },
+        { action: "hover", match: { role: "button", name: "Column", index: 0 }, label: "hover-column" },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });

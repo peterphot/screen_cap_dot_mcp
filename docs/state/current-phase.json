@@ -1,9 +1,9 @@
 {
-  "feature": "pp-27-coordinate-click-hover",
+  "feature": "pp-28-semantic-flow-selectors",
   "phase": "BUILD_COMPLETE",
   "currentTask": null,
   "status": "complete",
-  "lastUpdated": "2026-03-04T12:07:00Z",
+  "lastUpdated": "2026-03-04T10:20:00Z",
   "workflow": "ticket",
-  "sourceTicket": "PP-27"
+  "sourceTicket": "PP-28"
 }

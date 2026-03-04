@@ -9,6 +9,10 @@
  * 5. Continues on step failure (capture error screenshot, log, keep going)
  * 6. Writes a manifest.json summarizing the run
  * 7. Stops recording at end
+ *
+ * Element targeting: click, type, and hover steps can use:
+ * - `selector` (CSS) or `ref` (a11y snapshot ref ID) — handled by performClick/Type/Hover
+ * - `match` (semantic a11y match) — resolved at runtime via resolveMatch from a11y-matcher
  */
 
 import { join } from "node:path";
@@ -20,8 +24,11 @@ import logger from "../util/logger.js";
 import type { FlowDefinition, FlowStep } from "./schema.js";
 import { performClick, performType, performHover } from "../util/actions.js";
 import { clickAtCoordinates, hoverAtCoordinates } from "../cdp-helpers.js";
+import { clickByBackendNodeId, typeByBackendNodeId, hoverByBackendNodeId } from "../cdp-helpers.js";
 import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs } from "../ref-store.js";
+import { resolveMatch } from "../util/a11y-matcher.js";
+import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
 // ── Path confinement ──────────────────────────────────────────────────────
 
@@ -118,13 +125,24 @@ export class FlowRunner {
       };
 
       try {
-        await this.executeStep(page, step, outputDir, i);
+        // When a match step is labeled, take the a11y snapshot once and reuse
+        // it for both match resolution and artifact capture.
+        let cachedSnapshot: A11ySnapshotNode | undefined;
+        const hasMatch = "match" in step && step.match;
+        const needsArtifacts = step.label && step.action !== "screenshot" && step.action !== "a11y_snapshot";
+
+        if (hasMatch && needsArtifacts) {
+          const snap = await page.accessibility.snapshot({ interestingOnly: false });
+          if (snap) cachedSnapshot = snap as A11ySnapshotNode;
+        }
+
+        await this.executeStep(page, step, outputDir, i, cachedSnapshot);
         result.success = true;
 
         // Capture labeled screenshot/a11y if this step has a label
-        if (step.label && step.action !== "screenshot" && step.action !== "a11y_snapshot") {
+        if (needsArtifacts) {
           const { screenshotPath, a11yPath } = await this.captureArtifacts(
-            page, outputDir, i, step.label,
+            page, outputDir, i, step.label!, cachedSnapshot,
           );
           result.screenshotPath = screenshotPath;
           result.a11yPath = a11yPath;
@@ -182,7 +200,10 @@ export class FlowRunner {
 
   // ── Step execution ───────────────────────────────────────────────────
 
-  private async executeStep(page: Page, step: FlowStep, outputDir: string, stepIndex: number): Promise<void> {
+  private async executeStep(
+    page: Page, step: FlowStep, outputDir: string, stepIndex: number,
+    cachedSnapshot?: A11ySnapshotNode,
+  ): Promise<void> {
     switch (step.action) {
       case "navigate": {
         const urlResult = validateNavigationUrl(step.url);
@@ -198,7 +219,13 @@ export class FlowRunner {
       }
 
       case "click":
-        await performClick(step.selector, step.ref, page);
+        if (step.match) {
+          const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
+          const resolved = await resolveMatch(step.match, opts);
+          await clickByBackendNodeId(resolved.backendNodeId);
+        } else {
+          await performClick(step.selector, step.ref, page);
+        }
         break;
 
       case "click_at":
@@ -206,11 +233,23 @@ export class FlowRunner {
         break;
 
       case "type":
-        await performType(step.text, step.selector, step.ref, step.clear, page);
+        if (step.match) {
+          const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
+          const resolved = await resolveMatch(step.match, opts);
+          await typeByBackendNodeId(resolved.backendNodeId, step.text, step.clear);
+        } else {
+          await performType(step.text, step.selector, step.ref, step.clear, page);
+        }
         break;
 
       case "hover":
-        await performHover(step.selector, step.ref, page);
+        if (step.match) {
+          const opts = cachedSnapshot ? { snapshot: cachedSnapshot } : undefined;
+          const resolved = await resolveMatch(step.match, opts);
+          await hoverByBackendNodeId(resolved.backendNodeId);
+        } else {
+          await performHover(step.selector, step.ref, page);
+        }
         break;
 
       case "hover_at":
@@ -317,6 +356,7 @@ export class FlowRunner {
     outputDir: string,
     stepIndex: number,
     label: string,
+    cachedSnapshot?: A11ySnapshotNode,
   ): Promise<{ screenshotPath?: string; a11yPath?: string }> {
     const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
 
@@ -329,7 +369,7 @@ export class FlowRunner {
       })(),
       (async () => {
         const a11yPath = join(outputDir, `${stepIndex}-${safeLabel}-a11y.json`);
-        const snapshot = await page.accessibility.snapshot({ interestingOnly: true });
+        const snapshot = cachedSnapshot ?? await page.accessibility.snapshot({ interestingOnly: true });
         await safeWriteFile(a11yPath, JSON.stringify(snapshot, null, 2));
         return a11yPath;
       })(),
