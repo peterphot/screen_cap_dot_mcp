@@ -161,7 +161,7 @@ type ToolResult = {
  * Read lazily so env var changes and test overrides take effect.
  */
 function getScreenshotDir(): string {
-  return resolveConfigDir("SCREENSHOT_DIR", "/tmp/screen-cap-screenshots");
+  return resolveConfigDir("SCREENSHOT_DIR", "./screenshots");
 }
 
 /** Hard recursion cap to prevent stack overflow on deeply nested or malformed trees. */

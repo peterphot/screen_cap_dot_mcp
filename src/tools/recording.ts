@@ -34,7 +34,7 @@ import {
  * Read lazily so env var changes and test overrides take effect.
  */
 function getRecordingDir(): string {
-  return resolveConfigDir("RECORDING_DIR", "/tmp/screen-cap-recordings");
+  return resolveConfigDir("RECORDING_DIR", "./recordings");
 }
 
 /**

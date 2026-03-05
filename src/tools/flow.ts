@@ -36,7 +36,7 @@ type ErrorResult = {
  * Read lazily so env var changes and test overrides take effect.
  */
 function getFlowsDir(): string {
-  return resolveConfigDir("FLOWS_DIR", "flows");
+  return resolveConfigDir("FLOWS_DIR", "./flows");
 }
 
 /**

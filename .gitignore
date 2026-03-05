@@ -1,7 +1,11 @@
 node_modules/
 dist/
-output/
 *.tsbuildinfo
 .env
 .env.*
 .DS_Store
+
+# Default output directories (CWD-relative)
+screenshots/
+recordings/
+flow-output/

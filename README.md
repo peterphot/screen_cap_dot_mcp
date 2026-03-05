@@ -210,7 +210,7 @@ Flows are JSON files that define reusable browser automation sequences. They can
 When a flow runs, it creates a timestamped output directory:
 
 ```
-/tmp/screen-cap-flows/
+./flow-output/
   example_walkthrough-2026-03-03T15-42-30-123Z/
     manifest.json          # Metadata + per-step results
     recording.mp4          # Video (if recording enabled)
@@ -228,10 +228,10 @@ The manifest includes timing, success/failure status, file paths, and error mess
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CHROME_CDP_URL` | `http://127.0.0.1:9222` | Chrome DevTools Protocol endpoint |
-| `SCREENSHOT_DIR` | `/tmp/screen-cap-screenshots` | Screenshot output directory |
-| `RECORDING_DIR` | `/tmp/screen-cap-recordings` | Video recording output directory |
-| `FLOW_OUTPUT_DIR` | `/tmp/screen-cap-flows` | Flow execution output directory |
-| `FLOWS_DIR` | `flows/` | Directory for saved flow definitions |
+| `SCREENSHOT_DIR` | `./screenshots` | Screenshot output directory (relative to CWD) |
+| `RECORDING_DIR` | `./recordings` | Video recording output directory (relative to CWD) |
+| `FLOW_OUTPUT_DIR` | `./flow-output` | Flow execution output directory (relative to CWD) |
+| `FLOWS_DIR` | `./flows` | Directory for saved flow definitions |
 | `ALLOW_EVALUATE` | *(disabled)* | Set to `"true"` to enable `browser_evaluate` and flow `evaluate` steps |
 
 ## Security
@@ -274,7 +274,9 @@ src/
     wait-strategies.ts     # Smart wait selectors for common UI frameworks
   __tests__/               # 11 test files covering all modules
 flows/                     # Saved flow definitions (JSON)
-output/                    # Generated artifacts (screenshots, recordings)
+screenshots/               # Screenshot output (default SCREENSHOT_DIR)
+recordings/                # Video recording output (default RECORDING_DIR)
+flow-output/               # Flow execution output (default FLOW_OUTPUT_DIR)
 ```
 
 ## Architecture
