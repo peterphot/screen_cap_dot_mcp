@@ -16,6 +16,7 @@
  */
 
 import { ensurePage } from "../browser.js";
+import logger from "./logger.js";
 
 /**
  * Show a click indicator: blue dot with expanding ring pulse.
@@ -32,8 +33,8 @@ export async function showClickIndicator(
   try {
     const page = await ensurePage();
     await page.evaluate(injectIndicator, x, y, "click", 400);
-  } catch {
-    // Non-critical — silently swallow errors
+  } catch (err) {
+    logger.debug("Click indicator failed", err);
   }
 }
 
@@ -52,8 +53,8 @@ export async function showHoverIndicator(
   try {
     const page = await ensurePage();
     await page.evaluate(injectIndicator, x, y, "hover", 300);
-  } catch {
-    // Non-critical — silently swallow errors
+  } catch (err) {
+    logger.debug("Hover indicator failed", err);
   }
 }
 
@@ -65,6 +66,7 @@ export async function showHoverIndicator(
  *
  * This function runs in the BROWSER context, not Node.js.
  */
+// Parameters are `unknown` because this function is serialized to the browser context via page.evaluate()
 function injectIndicator(
   x: unknown,
   y: unknown,
