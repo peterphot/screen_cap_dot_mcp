@@ -1,0 +1,17 @@
+{
+  "feature": "click-indicator",
+  "tickets": {
+    "enabled": true,
+    "type": "linear",
+    "team": "Engineering",
+    "sourceTicket": "PP-44",
+    "mapping": {
+      "T001": { "ticketId": "PP-44", "identifier": "PP-44" },
+      "T002": { "ticketId": "PP-44", "identifier": "PP-44" }
+    }
+  },
+  "tasks": {
+    "T001": { "status": "complete", "description": "Write failing tests for click-indicator" },
+    "T002": { "status": "in_progress", "description": "Implement click-indicator utility", "started": "2026-03-05T00:01:00Z" }
+  }
+}
