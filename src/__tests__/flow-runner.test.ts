@@ -251,6 +251,7 @@ describe("FlowRunner", () => {
     expect(mockPage.screencast).toHaveBeenCalled();
     expect(mockRecorder.stop).toHaveBeenCalled();
     expect(result.recordingPath).toContain("recording.mp4");
+    expect(mockTranscode).toHaveBeenCalledWith(expect.stringContaining("recording.mp4"));
   });
 
   it("does not record when recording is disabled", async () => {
@@ -263,6 +264,7 @@ describe("FlowRunner", () => {
     await runner.run(flow);
 
     expect(mockPage.screencast).not.toHaveBeenCalled();
+    expect(mockTranscode).not.toHaveBeenCalled();
   });
 
   it("recordOverride=true overrides flow config", async () => {

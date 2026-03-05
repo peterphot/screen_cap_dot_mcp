@@ -216,11 +216,11 @@ export class FlowRunner {
     }
 
     // Transcode recording to H.264 (best-effort)
-    if (recordingPath) {
+    if (recorder && recordingPath) {
       try {
         await transcodeMp4ToH264(recordingPath);
       } catch (err) {
-        logger.warn(`Failed to transcode recording to H.264: ${(err as Error).message}`);
+        logger.warn(`Failed to transcode recording to H.264: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
