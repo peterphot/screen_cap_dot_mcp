@@ -12,6 +12,6 @@
   },
   "tasks": {
     "T001": { "status": "complete", "description": "Write failing tests for click-indicator" },
-    "T002": { "status": "in_progress", "description": "Implement click-indicator utility", "started": "2026-03-05T00:01:00Z" }
+    "T002": { "status": "complete", "description": "Implement click-indicator utility", "checkpoint": "4f1cf68" }
   }
 }
