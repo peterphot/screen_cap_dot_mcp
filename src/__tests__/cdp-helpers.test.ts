@@ -22,17 +22,22 @@
  * - getViewportBounds returns viewport dimensions
  * - animate option triggers animateMouseTo before click/hover dispatch
  * - animate=false (default) does not call animateMouseTo
+ * - Click/hover indicators fire after animateMouseTo when animate=true
+ * - Indicators are NOT called when animate is false/undefined
+ * - Call order: animateMouseTo -> indicator -> mouse event dispatch
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
 
-const { mockSend, mockEvaluate, mockAnimateMouseTo, mockSetMousePosition } = vi.hoisted(() => ({
+const { mockSend, mockEvaluate, mockAnimateMouseTo, mockSetMousePosition, mockShowClickIndicator, mockShowHoverIndicator } = vi.hoisted(() => ({
   mockSend: vi.fn(),
   mockEvaluate: vi.fn(),
   mockAnimateMouseTo: vi.fn(),
   mockSetMousePosition: vi.fn(),
+  mockShowClickIndicator: vi.fn(),
+  mockShowHoverIndicator: vi.fn(),
 }));
 
 vi.mock("../browser.js", () => ({
@@ -47,6 +52,11 @@ vi.mock("../util/logger.js", () => ({
 vi.mock("../util/mouse-animator.js", () => ({
   animateMouseTo: (...args: unknown[]) => mockAnimateMouseTo(...args),
   setMousePosition: (...args: unknown[]) => mockSetMousePosition(...args),
+}));
+
+vi.mock("../util/click-indicator.js", () => ({
+  showClickIndicator: (...args: unknown[]) => mockShowClickIndicator(...args),
+  showHoverIndicator: (...args: unknown[]) => mockShowHoverIndicator(...args),
 }));
 
 import {
@@ -834,5 +844,167 @@ describe("setMousePosition sync after interaction", () => {
     await hoverAtCoordinates(300, 400);
 
     expect(mockSetMousePosition).toHaveBeenCalledWith(300, 400);
+  });
+});
+
+// ── click/hover indicator integration ────────────────────────────────────
+
+describe("click/hover indicator integration", () => {
+  // ── Click indicators ───────────────────────────────────────────────────
+
+  it("clickByBackendNodeId calls showClickIndicator when animate=true", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockAnimateMouseTo.mockResolvedValueOnce(undefined);
+    mockShowClickIndicator.mockResolvedValueOnce(undefined);
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickByBackendNodeId(42, { animate: true });
+
+    expect(mockShowClickIndicator).toHaveBeenCalledWith(50, 50);
+  });
+
+  it("clickAtCoordinates calls showClickIndicator when animate=true", async () => {
+    mockAnimateMouseTo.mockResolvedValueOnce(undefined);
+    mockShowClickIndicator.mockResolvedValueOnce(undefined);
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(150, 250, { animate: true });
+
+    expect(mockShowClickIndicator).toHaveBeenCalledWith(150, 250);
+  });
+
+  // ── Hover indicators ──────────────────────────────────────────────────
+
+  it("hoverByBackendNodeId calls showHoverIndicator when animate=true", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockAnimateMouseTo.mockResolvedValueOnce(undefined);
+    mockShowHoverIndicator.mockResolvedValueOnce(undefined);
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverByBackendNodeId(42, { animate: true });
+
+    expect(mockShowHoverIndicator).toHaveBeenCalledWith(50, 50);
+  });
+
+  it("hoverAtCoordinates calls showHoverIndicator when animate=true", async () => {
+    mockAnimateMouseTo.mockResolvedValueOnce(undefined);
+    mockShowHoverIndicator.mockResolvedValueOnce(undefined);
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(300, 400, { animate: true });
+
+    expect(mockShowHoverIndicator).toHaveBeenCalledWith(300, 400);
+  });
+
+  // ── No indicators without animate ─────────────────────────────────────
+
+  it("clickByBackendNodeId does NOT call showClickIndicator without animate", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickByBackendNodeId(42);
+
+    expect(mockShowClickIndicator).not.toHaveBeenCalled();
+  });
+
+  it("clickAtCoordinates does NOT call showClickIndicator without animate", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(150, 250);
+
+    expect(mockShowClickIndicator).not.toHaveBeenCalled();
+  });
+
+  it("hoverByBackendNodeId does NOT call showHoverIndicator without animate", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverByBackendNodeId(42);
+
+    expect(mockShowHoverIndicator).not.toHaveBeenCalled();
+  });
+
+  it("hoverAtCoordinates does NOT call showHoverIndicator without animate", async () => {
+    mockSend.mockResolvedValueOnce(undefined); // mouseMoved
+
+    await hoverAtCoordinates(300, 400);
+
+    expect(mockShowHoverIndicator).not.toHaveBeenCalled();
+  });
+
+  // ── Call order verification ───────────────────────────────────────────
+
+  it("clickByBackendNodeId: order is animateMouseTo -> showClickIndicator -> mousePressed", async () => {
+    const callOrder: string[] = [];
+
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockAnimateMouseTo.mockImplementationOnce(async () => { callOrder.push("animateMouseTo"); });
+    mockShowClickIndicator.mockImplementationOnce(async () => { callOrder.push("showClickIndicator"); });
+    mockSend.mockImplementationOnce(async () => { callOrder.push("mousePressed"); }); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickByBackendNodeId(42, { animate: true });
+
+    expect(callOrder).toEqual(["animateMouseTo", "showClickIndicator", "mousePressed"]);
+  });
+
+  it("hoverByBackendNodeId: order is animateMouseTo -> showHoverIndicator -> mouseMoved", async () => {
+    const callOrder: string[] = [];
+
+    mockSend.mockResolvedValueOnce(undefined); // DOM.scrollIntoViewIfNeeded
+    mockSend.mockResolvedValueOnce({
+      quads: [[0, 0, 100, 0, 100, 100, 0, 100]],
+    }); // DOM.getContentQuads
+    mockAnimateMouseTo.mockImplementationOnce(async () => { callOrder.push("animateMouseTo"); });
+    mockShowHoverIndicator.mockImplementationOnce(async () => { callOrder.push("showHoverIndicator"); });
+    mockSend.mockImplementationOnce(async () => { callOrder.push("mouseMoved"); }); // mouseMoved
+
+    await hoverByBackendNodeId(42, { animate: true });
+
+    expect(callOrder).toEqual(["animateMouseTo", "showHoverIndicator", "mouseMoved"]);
+  });
+
+  it("clickAtCoordinates: order is animateMouseTo -> showClickIndicator -> mousePressed", async () => {
+    const callOrder: string[] = [];
+
+    mockAnimateMouseTo.mockImplementationOnce(async () => { callOrder.push("animateMouseTo"); });
+    mockShowClickIndicator.mockImplementationOnce(async () => { callOrder.push("showClickIndicator"); });
+    mockSend.mockImplementationOnce(async () => { callOrder.push("mousePressed"); }); // mousePressed
+    mockSend.mockResolvedValueOnce(undefined); // mouseReleased
+
+    await clickAtCoordinates(150, 250, { animate: true });
+
+    expect(callOrder).toEqual(["animateMouseTo", "showClickIndicator", "mousePressed"]);
+  });
+
+  it("hoverAtCoordinates: order is animateMouseTo -> showHoverIndicator -> mouseMoved", async () => {
+    const callOrder: string[] = [];
+
+    mockAnimateMouseTo.mockImplementationOnce(async () => { callOrder.push("animateMouseTo"); });
+    mockShowHoverIndicator.mockImplementationOnce(async () => { callOrder.push("showHoverIndicator"); });
+    mockSend.mockImplementationOnce(async () => { callOrder.push("mouseMoved"); }); // mouseMoved
+
+    await hoverAtCoordinates(300, 400, { animate: true });
+
+    expect(callOrder).toEqual(["animateMouseTo", "showHoverIndicator", "mouseMoved"]);
   });
 });
