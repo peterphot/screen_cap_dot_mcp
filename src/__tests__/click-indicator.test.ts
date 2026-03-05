@@ -29,6 +29,7 @@ vi.mock("../util/logger.js", () => ({
 }));
 
 import { showClickIndicator, showHoverIndicator } from "../util/click-indicator.js";
+import { ensurePage } from "../browser.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -41,6 +42,7 @@ describe("showClickIndicator", () => {
   it("calls page.evaluate with fn, x, y, type='click', duration=400", async () => {
     await showClickIndicator(150, 300);
 
+    expect(ensurePage).toHaveBeenCalledTimes(1);
     expect(mockEvaluate).toHaveBeenCalledTimes(1);
     const [fn, argX, argY, argType, argDuration] = mockEvaluate.mock.calls[0];
     expect(typeof fn).toBe("function");
@@ -59,6 +61,11 @@ describe("showClickIndicator", () => {
     mockEvaluate.mockRejectedValue(new Error("page crashed"));
     await expect(showClickIndicator(100, 200)).resolves.toBeUndefined();
   });
+
+  it("swallows errors from ensurePage", async () => {
+    (ensurePage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("no browser"));
+    await expect(showClickIndicator(100, 200)).resolves.toBeUndefined();
+  });
 });
 
 // ── showHoverIndicator ──────────────────────────────────────────────────
@@ -67,6 +74,7 @@ describe("showHoverIndicator", () => {
   it("calls page.evaluate with fn, x, y, type='hover', duration=300", async () => {
     await showHoverIndicator(250, 400);
 
+    expect(ensurePage).toHaveBeenCalledTimes(1);
     expect(mockEvaluate).toHaveBeenCalledTimes(1);
     const [fn, argX, argY, argType, argDuration] = mockEvaluate.mock.calls[0];
     expect(typeof fn).toBe("function");
@@ -83,6 +91,11 @@ describe("showHoverIndicator", () => {
 
   it("swallows errors from page.evaluate", async () => {
     mockEvaluate.mockRejectedValue(new Error("page crashed"));
+    await expect(showHoverIndicator(100, 200)).resolves.toBeUndefined();
+  });
+
+  it("swallows errors from ensurePage", async () => {
+    (ensurePage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("no browser"));
     await expect(showHoverIndicator(100, 200)).resolves.toBeUndefined();
   });
 });

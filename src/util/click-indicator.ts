@@ -71,12 +71,14 @@ function injectIndicator(
   type: unknown,
   durationMs: unknown,
 ): void {
-  const cx = x as number;
-  const cy = y as number;
-  if (typeof cx !== 'number' || !isFinite(cx)) return;
-  if (typeof cy !== 'number' || !isFinite(cy)) return;
-  const indicatorType = type as string;
-  const duration = durationMs as number;
+  if (typeof x !== 'number' || !isFinite(x)) return;
+  if (typeof y !== 'number' || !isFinite(y)) return;
+  if (typeof type !== 'string') return;
+  if (typeof durationMs !== 'number' || !isFinite(durationMs) || durationMs <= 0) return;
+  const cx = x;
+  const cy = y;
+  const indicatorType = type;
+  const duration = durationMs;
 
   // ── Idempotent style injection ──────────────────────────────────────
   const styleId = "__screencap_indicator_styles__";
