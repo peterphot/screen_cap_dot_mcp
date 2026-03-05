@@ -6,7 +6,7 @@
     {
       "action": "navigate",
       "url": "https://growthos.mutinex.co/growth-center",
-      "waitUntil": "networkidle2",
+      "waitUntil": "domcontentloaded",
       "label": "01-growth-center"
     },
     { "action": "wait", "strategy": "smart", "timeout": 10000 },
@@ -46,7 +46,7 @@
     {
       "action": "navigate",
       "url": "https://growthos.mutinex.co/channel-roi",
-      "waitUntil": "networkidle2",
+      "waitUntil": "domcontentloaded",
       "label": "04-channel-roi"
     },
     { "action": "wait", "strategy": "smart", "timeout": 15000 },
@@ -74,7 +74,7 @@
     {
       "action": "navigate",
       "url": "https://growthos.mutinex.co/investment-levels",
-      "waitUntil": "networkidle2",
+      "waitUntil": "domcontentloaded",
       "label": "06-investment-levels"
     },
     { "action": "wait", "strategy": "smart", "timeout": 15000 },
@@ -102,7 +102,7 @@
     {
       "action": "navigate",
       "url": "https://growthos.mutinex.co/sales-drivers",
-      "waitUntil": "networkidle2",
+      "waitUntil": "domcontentloaded",
       "label": "08-sales-drivers"
     },
     { "action": "wait", "strategy": "smart", "timeout": 15000 },
@@ -118,7 +118,7 @@
     {
       "action": "navigate",
       "url": "https://growthos.mutinex.co/scenarios-v3/all",
-      "waitUntil": "networkidle2",
+      "waitUntil": "domcontentloaded",
       "label": "09-scenario-builder"
     },
     { "action": "wait", "strategy": "smart", "timeout": 15000 },

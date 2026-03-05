@@ -208,6 +208,56 @@ describe("FlowRunner", () => {
     });
   });
 
+  it("logs a warning when navigate step uses networkidle2", async () => {
+    const flow: FlowDefinition = {
+      name: "idle2-warn",
+      steps: [{ action: "navigate", url: "https://example.com", waitUntil: "networkidle2" }],
+    };
+
+    await runner.run(flow);
+
+    const { default: logger } = await import("../util/logger.js");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('waitUntil="networkidle2" may hang on SPAs'),
+    );
+  });
+
+  it("logs a warning when navigate step uses networkidle0", async () => {
+    const flow: FlowDefinition = {
+      name: "idle0-warn",
+      steps: [{ action: "navigate", url: "https://example.com", waitUntil: "networkidle0" }],
+    };
+
+    await runner.run(flow);
+
+    const { default: logger } = await import("../util/logger.js");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('waitUntil="networkidle0" may hang on SPAs'),
+    );
+  });
+
+  it("does not log a warning for safe waitUntil strategies", async () => {
+    const flow: FlowDefinition = {
+      name: "safe-wait",
+      steps: [
+        { action: "navigate", url: "https://example.com", waitUntil: "domcontentloaded" },
+        { action: "navigate", url: "https://example.com", waitUntil: "load" },
+        { action: "navigate", url: "https://example.com" },
+      ],
+    };
+
+    await runner.run(flow);
+
+    const { default: logger } = await import("../util/logger.js");
+    // logger.warn should not have been called with a networkidle warning
+    // (it may be called for other reasons, so check specific content)
+    const warnCalls = (logger.warn as ReturnType<typeof vi.fn>).mock.calls;
+    const networkIdleWarnings = warnCalls.filter(
+      (call: unknown[]) => typeof call[0] === "string" && (call[0] as string).includes("may hang on SPAs"),
+    );
+    expect(networkIdleWarnings).toHaveLength(0);
+  });
+
   it("creates timestamped output directory within FLOW_OUTPUT_DIR", async () => {
     const flow: FlowDefinition = {
       name: "test flow",

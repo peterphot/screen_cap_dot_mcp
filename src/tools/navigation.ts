@@ -84,6 +84,13 @@ export function registerNavigationTools(server: McpServer): void {
           };
         }
 
+        if (waitUntil === "networkidle0" || waitUntil === "networkidle2") {
+          logger.warn(
+            `browser_navigate: waitUntil="${waitUntil}" may hang on SPAs. ` +
+            `Consider "load" or "domcontentloaded" with a subsequent smart wait.`
+          );
+        }
+
         const page = await ensurePage();
         await page.goto(urlResult.href, {
           waitUntil: waitUntil ?? "load",
