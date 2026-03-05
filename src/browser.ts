@@ -105,6 +105,7 @@ export async function ensureBrowser(): Promise<Browser> {
       b = await puppeteer.connect({
         browserURL: browserUrl,
         defaultViewport: null,
+        protocolTimeout: 180_000,
       });
     } catch (err) {
       throw new Error(

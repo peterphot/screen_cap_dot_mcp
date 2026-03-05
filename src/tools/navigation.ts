@@ -248,7 +248,7 @@ export function registerNavigationTools(server: McpServer): void {
     async ({ key }) => {
       try {
         const page = await ensurePage();
-        await page.keyboard.press(key);
+        await page.keyboard.press(key as import("puppeteer-core").KeyInput);
         return {
           content: [{ type: "text" as const, text: `Pressed key: ${key}` }],
         };
