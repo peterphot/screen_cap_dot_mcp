@@ -30,6 +30,7 @@ import { validateNavigationUrl } from "../util/url-validation.js";
 import { clearRefs, resolveRef } from "../ref-store.js";
 import { resolveMatch } from "../util/a11y-matcher.js";
 import { scrollToText } from "../util/scroll-to-text.js";
+import { transcodeMp4ToH264 } from "../util/transcode.js";
 import type { A11ySnapshotNode } from "../util/a11y-formatter.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -212,6 +213,15 @@ export class FlowRunner {
     if (recorder) {
       await recorder.stop();
       logger.info(`Recording stopped: ${recordingPath}`);
+    }
+
+    // Transcode recording to H.264 (best-effort)
+    if (recordingPath) {
+      try {
+        await transcodeMp4ToH264(recordingPath);
+      } catch (err) {
+        logger.warn(`Failed to transcode recording to H.264: ${(err as Error).message}`);
+      }
     }
 
     const totalDurationMs = Date.now() - runStart;

@@ -102,6 +102,11 @@ vi.mock("../util/a11y-matcher.js", () => ({
   resolveMatch: (...args: unknown[]) => mockResolveMatch(...args),
 }));
 
+const mockTranscode = vi.fn().mockResolvedValue(undefined);
+vi.mock("../util/transcode.js", () => ({
+  transcodeMp4ToH264: (...args: unknown[]) => mockTranscode(...args),
+}));
+
 // ── Mock page ────────────────────────────────────────────────────────────
 
 interface MockPage {
@@ -283,6 +288,24 @@ describe("FlowRunner", () => {
     await runner.run(flow, false);
 
     expect(mockPage.screencast).not.toHaveBeenCalled();
+  });
+
+  it("warns but does not fail when transcode errors", async () => {
+    mockTranscode.mockRejectedValueOnce(new Error("ffmpeg not found"));
+
+    const flow: FlowDefinition = {
+      name: "transcode-fail",
+      recording: { enabled: true, format: "mp4" },
+      steps: [{ action: "navigate", url: "https://example.com" }],
+    };
+
+    const result = await runner.run(flow);
+
+    expect(result.recordingPath).toContain("recording.mp4");
+    const { default: logger } = await import("../util/logger.js");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("ffmpeg not found"),
+    );
   });
 
   it("executes click step", async () => {
