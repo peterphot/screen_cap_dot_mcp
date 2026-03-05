@@ -1,0 +1,502 @@
+{
+  "name": "channel-roi-demo",
+  "description": "Product demo walkthrough of the Channel ROI page. Covers KPI overview, MAITE AI insights, date range presets, Business Unit and Funnel filter interactions, all three chart views (Bubble, Column with ROI/Spend views, Distribution by product category), Ad Stocks, and the Insights Table.",
+  "recording": {
+    "enabled": true,
+    "format": "mp4"
+  },
+  "steps": [
+    {
+      "action": "group",
+      "name": "Navigate to Growth Center",
+      "steps": [
+        {
+          "action": "navigate",
+          "url": "https://growthos.mutinex.co/growth-center",
+          "waitUntil": "domcontentloaded",
+          "label": "Navigate to Growth Center"
+        },
+        {
+          "action": "sleep",
+          "duration": 8000,
+          "label": "Wait for Growth Center to fully render"
+        },
+        {
+          "action": "screenshot",
+          "label": "Growth Center landing page"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Enter Channel ROI",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "menuitem", "name": "Channel ROI" },
+          "animate": true,
+          "label": "Click Channel ROI in sidebar"
+        },
+        {
+          "action": "sleep",
+          "duration": 10000,
+          "label": "Let Channel ROI page fully load"
+        },
+        {
+          "action": "screenshot",
+          "label": "Channel ROI page overview"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "KPI Cards & MAITE Insights",
+      "steps": [
+        {
+          "action": "sleep",
+          "duration": 2500,
+          "label": "Admire KPI summary cards"
+        },
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 350,
+          "label": "Scroll to reveal MAITE Instant Insights"
+        },
+        {
+          "action": "sleep",
+          "duration": 3000,
+          "label": "Read MAITE insight cards"
+        },
+        {
+          "action": "screenshot",
+          "label": "MAITE Instant Insights"
+        },
+        {
+          "action": "scroll",
+          "direction": "up",
+          "amount": 350,
+          "label": "Scroll back to top"
+        },
+        {
+          "action": "sleep",
+          "duration": 1000
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Open Date Picker",
+      "steps": [
+        {
+          "action": "sleep",
+          "duration": 3000,
+          "label": "Let page JS settle before interacting with date picker"
+        },
+        {
+          "action": "click",
+          "match": { "role": "image", "name": "calendar" },
+          "animate": true,
+          "label": "Click calendar icon to open date range picker"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Show date picker with presets"
+        },
+        {
+          "action": "screenshot",
+          "label": "Date range picker open with presets"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Select Date Preset",
+      "steps": [
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Let date picker popup stabilize"
+        },
+        {
+          "action": "click",
+          "match": { "role": "StaticText", "name": "Last 6 months" },
+          "animate": true,
+          "label": "Select Last 6 months"
+        },
+        {
+          "action": "sleep",
+          "duration": 8000,
+          "label": "Wait for data to reload with new date range"
+        },
+        {
+          "action": "screenshot",
+          "label": "KPIs updated for Last 6 months"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Open Business Unit Filter",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "combobox", "index": 1 },
+          "animate": true,
+          "label": "Open Business Unit dropdown"
+        },
+        {
+          "action": "sleep",
+          "duration": 1500,
+          "label": "Show brand hierarchy"
+        },
+        {
+          "action": "screenshot",
+          "label": "Business Unit dropdown with brands"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Select Brand",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "option", "name": "urban_elements" },
+          "animate": true,
+          "label": "Select urban_elements brand"
+        },
+        {
+          "action": "sleep",
+          "duration": 10000,
+          "label": "Wait for filtered data to load"
+        },
+        {
+          "action": "screenshot",
+          "label": "Channel ROI filtered to urban_elements"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "MAITE Insights for Brand",
+      "steps": [
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 350,
+          "label": "Scroll to see updated MAITE insights"
+        },
+        {
+          "action": "sleep",
+          "duration": 3000,
+          "label": "Read brand-specific MAITE insights"
+        },
+        {
+          "action": "screenshot",
+          "label": "MAITE insights for urban_elements"
+        },
+        {
+          "action": "scroll",
+          "direction": "up",
+          "amount": 350,
+          "label": "Back to filters"
+        },
+        {
+          "action": "sleep",
+          "duration": 1000
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Open Funnels Filter",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "combobox", "name": "All", "index": 0 },
+          "animate": true,
+          "label": "Open Funnels dropdown"
+        },
+        {
+          "action": "sleep",
+          "duration": 1500,
+          "label": "Show funnel options"
+        },
+        {
+          "action": "screenshot",
+          "label": "Funnels filter options"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Select Brand Funnel",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "option", "name": "Brand" },
+          "animate": true,
+          "label": "Select Brand funnel"
+        },
+        {
+          "action": "sleep",
+          "duration": 10000,
+          "label": "Wait for brand funnel data to load"
+        },
+        {
+          "action": "screenshot",
+          "label": "Brand Marketing KPIs for urban_elements"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Bubble Chart",
+      "steps": [
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 700,
+          "label": "Scroll to Channel Effectiveness chart"
+        },
+        {
+          "action": "sleep",
+          "duration": 3000,
+          "label": "Admire the bubble chart"
+        },
+        {
+          "action": "screenshot",
+          "label": "Channel Effectiveness bubble chart"
+        },
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 200,
+          "label": "Scroll to see all bubbles"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Show full bubble chart with all channels"
+        },
+        {
+          "action": "screenshot",
+          "label": "Bubble chart - all channels visible"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Column Chart",
+      "steps": [
+        {
+          "action": "scroll",
+          "direction": "up",
+          "amount": 100,
+          "label": "Scroll up to see chart toggle"
+        },
+        {
+          "action": "sleep",
+          "duration": 500
+        },
+        {
+          "action": "click",
+          "match": { "role": "button", "name": "Column" },
+          "animate": true,
+          "label": "Switch to Column chart"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Show column chart"
+        },
+        {
+          "action": "screenshot",
+          "label": "Column chart view"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Column Chart ROI View",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "combobox", "index": 4 },
+          "animate": true,
+          "label": "Open View dropdown"
+        },
+        {
+          "action": "sleep",
+          "duration": 1000,
+          "label": "Show view options"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Select ROI View",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "option", "name": "ROI" },
+          "animate": true,
+          "label": "Switch to ROI (%) view"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Show ROI column chart"
+        },
+        {
+          "action": "screenshot",
+          "label": "Column chart - ROI (%)"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Distribution Chart",
+      "steps": [
+        {
+          "action": "click",
+          "match": { "role": "button", "name": "Distribution" },
+          "animate": true,
+          "label": "Switch to Distribution chart"
+        },
+        {
+          "action": "sleep",
+          "duration": 2500,
+          "label": "Show stacked bar chart by product category"
+        },
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 200,
+          "label": "Scroll to see full distribution chart"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Admire distribution breakdown"
+        },
+        {
+          "action": "screenshot",
+          "label": "Distribution chart - Revenue by product category"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Ad Stocks",
+      "steps": [
+        {
+          "action": "scroll_to_text",
+          "text": "Ad Stocks",
+          "timeout": 10000,
+          "label": "Scroll to Ad Stocks section"
+        },
+        {
+          "action": "sleep",
+          "duration": 2500,
+          "label": "Show Ad Stocks - Length of Effect and Peak"
+        },
+        {
+          "action": "screenshot",
+          "label": "Ad Stocks chart"
+        },
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 400,
+          "label": "Scroll to see full Ad Stocks chart"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Show all channel ad stock bars"
+        },
+        {
+          "action": "screenshot",
+          "label": "Ad Stocks with legend"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Insights Table",
+      "steps": [
+        {
+          "action": "scroll_to_text",
+          "text": "Insights Table",
+          "timeout": 10000,
+          "label": "Scroll to Insights Table"
+        },
+        {
+          "action": "sleep",
+          "duration": 2500,
+          "label": "Show Insights Table"
+        },
+        {
+          "action": "screenshot",
+          "label": "Insights Table overview"
+        },
+        {
+          "action": "scroll",
+          "direction": "down",
+          "amount": 400,
+          "label": "Scroll to see table rows"
+        },
+        {
+          "action": "sleep",
+          "duration": 2500,
+          "label": "Browse channel performance data"
+        },
+        {
+          "action": "screenshot",
+          "label": "Insights Table - channel rows"
+        }
+      ]
+    },
+
+    {
+      "action": "group",
+      "name": "Final Overview",
+      "steps": [
+        {
+          "action": "scroll",
+          "direction": "up",
+          "amount": 5000,
+          "label": "Return to top of page"
+        },
+        {
+          "action": "sleep",
+          "duration": 2000,
+          "label": "Final view of Channel ROI"
+        },
+        {
+          "action": "screenshot",
+          "label": "Final - Channel ROI overview"
+        }
+      ]
+    }
+  ]
+}

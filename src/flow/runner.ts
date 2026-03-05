@@ -259,6 +259,12 @@ export class FlowRunner {
     const animateOpts = shouldAnimate ? { animate: true } : undefined;
     switch (step.action) {
       case "navigate": {
+        if (step.waitUntil === "networkidle0" || step.waitUntil === "networkidle2") {
+          logger.warn(
+            `Step ${stepIndex}: waitUntil="${step.waitUntil}" may hang on SPAs. ` +
+            `Consider "load" or "domcontentloaded" with a subsequent smart wait.`,
+          );
+        }
         const urlResult = validateNavigationUrl(step.url);
         if ("error" in urlResult) {
           throw new Error(urlResult.error);
