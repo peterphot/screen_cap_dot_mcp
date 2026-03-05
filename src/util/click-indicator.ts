@@ -11,28 +11,30 @@
  * - CSS `@keyframes` on compositor thread for smooth rendering
  * - Style tag injected once with idempotent `id` check
  * - Auto-cleanup via `animationend` listener + fallback `setTimeout`
+ * - Calls `ensurePage()` internally (matches mouse-animator pattern)
+ * - try/catch swallows errors — indicators are non-critical
  */
 
-/** Minimal page interface — only requires evaluate(). */
-interface PageLike {
-  evaluate: <T>(fn: (...args: unknown[]) => T, ...args: unknown[]) => Promise<T>;
-}
+import { ensurePage } from "../browser.js";
 
 /**
  * Show a click indicator: blue dot with expanding ring pulse.
  *
  * Injects a temporary DOM overlay at (x, y) that auto-removes after 400ms.
  *
- * @param page - Puppeteer Page (or any object with an `evaluate` method)
  * @param x - Viewport x coordinate
  * @param y - Viewport y coordinate
  */
 export async function showClickIndicator(
-  page: PageLike,
   x: number,
   y: number,
 ): Promise<void> {
-  await page.evaluate(injectIndicator, x, y, "click", 400);
+  try {
+    const page = await ensurePage();
+    await page.evaluate(injectIndicator, x, y, "click", 400);
+  } catch {
+    // Non-critical — silently swallow errors
+  }
 }
 
 /**
@@ -40,16 +42,19 @@ export async function showClickIndicator(
  *
  * Injects a temporary DOM overlay at (x, y) that auto-removes after 300ms.
  *
- * @param page - Puppeteer Page (or any object with an `evaluate` method)
  * @param x - Viewport x coordinate
  * @param y - Viewport y coordinate
  */
 export async function showHoverIndicator(
-  page: PageLike,
   x: number,
   y: number,
 ): Promise<void> {
-  await page.evaluate(injectIndicator, x, y, "hover", 300);
+  try {
+    const page = await ensurePage();
+    await page.evaluate(injectIndicator, x, y, "hover", 300);
+  } catch {
+    // Non-critical — silently swallow errors
+  }
 }
 
 // ── Browser-context injection function ──────────────────────────────────
@@ -68,6 +73,8 @@ function injectIndicator(
 ): void {
   const cx = x as number;
   const cy = y as number;
+  if (typeof cx !== 'number' || !isFinite(cx)) return;
+  if (typeof cy !== 'number' || !isFinite(cy)) return;
   const indicatorType = type as string;
   const duration = durationMs as number;
 
@@ -133,11 +140,10 @@ function injectIndicator(
 
   // ── Auto-cleanup ────────────────────────────────────────────────────
   const cleanup = (el: HTMLElement) => {
-    el.addEventListener("animationend", () => el.remove(), { once: true });
-    // Fallback: remove after duration + 100ms safety margin
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       if (el.parentNode) el.remove();
     }, duration + 100);
+    el.addEventListener("animationend", () => { clearTimeout(timerId); el.remove(); }, { once: true });
   };
 
   cleanup(dot);
