@@ -241,6 +241,8 @@ describe("FlowRunner", () => {
       name: "safe-wait",
       steps: [
         { action: "navigate", url: "https://example.com", waitUntil: "domcontentloaded" },
+        { action: "navigate", url: "https://example.com", waitUntil: "load" },
+        { action: "navigate", url: "https://example.com" },
       ],
     };
 
