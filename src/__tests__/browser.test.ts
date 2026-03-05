@@ -576,7 +576,8 @@ describe("stale page cache recovery", () => {
     // Re-acquire the page
     await ensurePage();
 
-    // clearRefs should have been called during stale page recovery
+    // cleanupRecordingState and clearRefs should have been called during stale page recovery
+    expect(cleanupRecordingState).toHaveBeenCalled();
     expect(clearRefs).toHaveBeenCalled();
 
     // CDP session should have been invalidated — ensureCDPSession should

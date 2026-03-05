@@ -148,19 +148,12 @@ export async function ensureBrowser(): Promise<Browser> {
  */
 export async function ensurePage(): Promise<Page> {
   if (page) {
-    // Validate the cached page is still alive
-    let isStale = false;
-
     if (!isPageAlive(page)) {
-      isStale = true;
       if (page.isClosed()) {
         logger.warn("Cached page was closed — re-acquiring...");
       } else {
         logger.warn("Cached page is detached — re-acquiring...");
       }
-    }
-
-    if (isStale) {
       cleanupRecordingState();
       page = null;
       pagePromise = null;
