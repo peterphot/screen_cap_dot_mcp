@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
@@ -61,16 +62,20 @@ vi.mock("node:fs/promises", () => ({
 const mockConfinePath = vi.fn();
 const mockSafeWriteFile = vi.fn();
 
-vi.mock("../util/path-confinement.js", () => ({
-  resolveConfigDir: (_envVar: string, defaultPath: string) => {
-    // Use env var if set, else default — mirrors real implementation
-    const raw = process.env.SCREENSHOT_DIR ?? defaultPath;
-    // Simple resolve for testing
-    return raw.startsWith("/") ? raw : `/cwd/${raw}`;
-  },
-  confinePath: (...args: unknown[]) => mockConfinePath(...args),
-  safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
-}));
+vi.mock("../util/path-confinement.js", async () => {
+  const { resolve: nodeResolve } = await import("node:path");
+  return {
+    resolveConfigDir: (_envVar: string, defaultPath: string) => {
+      // Use env var if set, else default — mirrors real implementation
+      const raw = process.env.SCREENSHOT_DIR ?? defaultPath;
+      const resolved = nodeResolve(raw);
+      if (resolved === "/") throw new Error(`${_envVar} must not resolve to the filesystem root.`);
+      return resolved;
+    },
+    confinePath: (...args: unknown[]) => mockConfinePath(...args),
+    safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
+  };
+});
 
 // Mock page object used by tools
 interface MockElement {
@@ -122,6 +127,9 @@ let server: McpServer;
 // Base64 PNG stub (1x1 transparent pixel)
 const FAKE_SCREENSHOT_BUFFER = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGP6/x8AAwAB/auKfQAAAABJRU5ErkJggg==", "base64");
 const FAKE_SCREENSHOT_BASE64 = FAKE_SCREENSHOT_BUFFER.toString("base64");
+
+/** Default SCREENSHOT_DIR used in tests — CWD-relative "./screenshots" resolved to absolute. */
+const TEST_SCREENSHOT_DIR = resolve("./screenshots");
 
 const originalScreenshotDir = process.env.SCREENSHOT_DIR;
 
@@ -285,16 +293,16 @@ describe("browser_screenshot", () => {
   it("saves screenshot to disk when savePath is within allowed directory", async () => {
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/tmp/screen-cap-screenshots/test.png" },
+      { savePath: `${TEST_SCREENSHOT_DIR}/test.png` },
       { signal: new AbortController().signal },
     );
 
     expect(mockConfinePath).toHaveBeenCalledWith(
-      "/tmp/screen-cap-screenshots/test.png",
-      expect.stringContaining("screen-cap-screenshots"),
+      `${TEST_SCREENSHOT_DIR}/test.png`,
+      expect.stringContaining("screenshots"),
     );
     expect(mockSafeWriteFile).toHaveBeenCalledWith(
-      "/tmp/screen-cap-screenshots/test.png",
+      `${TEST_SCREENSHOT_DIR}/test.png`,
       expect.any(Buffer),
     );
     // Should still return the image content block
@@ -302,7 +310,7 @@ describe("browser_screenshot", () => {
   });
 
   it("rejects savePath outside allowed directory", async () => {
-    mockConfinePath.mockResolvedValue({ error: "Path must be within /tmp/screen-cap-screenshots" });
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_SCREENSHOT_DIR}` });
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
       { savePath: "/etc/evil.png" },
@@ -315,10 +323,10 @@ describe("browser_screenshot", () => {
   });
 
   it("rejects savePath with directory traversal", async () => {
-    mockConfinePath.mockResolvedValue({ error: "Path must be within /tmp/screen-cap-screenshots" });
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_SCREENSHOT_DIR}` });
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/tmp/screen-cap-screenshots/../../etc/evil.png" },
+      { savePath: `${TEST_SCREENSHOT_DIR}/../../etc/evil.png` },
       { signal: new AbortController().signal },
     );
 
@@ -328,11 +336,11 @@ describe("browser_screenshot", () => {
   });
 
   it("rejects savePath when realpath reveals symlink escape", async () => {
-    mockConfinePath.mockResolvedValue({ error: "Path must be within /tmp/screen-cap-screenshots (symlink detected)" });
+    mockConfinePath.mockResolvedValue({ error: `Path must be within ${TEST_SCREENSHOT_DIR} (symlink detected)` });
 
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/tmp/screen-cap-screenshots/escape/evil.png" },
+      { savePath: `${TEST_SCREENSHOT_DIR}/escape/evil.png` },
       { signal: new AbortController().signal },
     );
 
@@ -372,7 +380,7 @@ describe("browser_screenshot", () => {
     mockSafeWriteFile.mockRejectedValue(new Error("Permission denied"));
     const handler = getToolHandler(server, "browser_screenshot");
     const result = await handler(
-      { savePath: "/tmp/screen-cap-screenshots/readonly.png" },
+      { savePath: `${TEST_SCREENSHOT_DIR}/readonly.png` },
       { signal: new AbortController().signal },
     );
 
@@ -406,7 +414,7 @@ describe("browser_screenshot", () => {
       for (const incompatible of [
         { annotate: true, selector: "#foo" },
         { annotate: true, fullPage: true },
-        { annotate: true, savePath: "/tmp/screen-cap-screenshots/out.png" },
+        { annotate: true, savePath: `${TEST_SCREENSHOT_DIR}/out.png` },
       ]) {
         const result = await handler(incompatible, { signal: new AbortController().signal });
         expect(result.isError).toBe(true);

@@ -58,7 +58,7 @@ const MUTATING_STEP_ACTIONS = [
  * Read lazily so env var changes and test overrides take effect.
  */
 function getFlowOutputDir(): string {
-  return resolveConfigDir("FLOW_OUTPUT_DIR", "/tmp/screen-cap-flows");
+  return resolveConfigDir("FLOW_OUTPUT_DIR", "./flow-output");
 }
 
 async function confineDirToFlowOutputDir(

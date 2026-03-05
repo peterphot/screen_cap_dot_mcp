@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { resolve } from "node:path";
 import { FlowRunner } from "../flow/runner.js";
 import type { FlowDefinition } from "../flow/schema.js";
 
@@ -129,7 +130,8 @@ interface MockPage {
 let mockPage: MockPage;
 let mockRecorder: { stop: ReturnType<typeof vi.fn> };
 
-const FLOW_DIR = "/tmp/screen-cap-flows";
+/** Default FLOW_OUTPUT_DIR: CWD-relative "./flow-output" resolved to absolute. */
+const FLOW_DIR = resolve("./flow-output");
 
 const originalFlowOutputDir = process.env.FLOW_OUTPUT_DIR;
 const originalAllowEvaluate = process.env.ALLOW_EVALUATE;
@@ -892,7 +894,7 @@ describe("path confinement", () => {
 
     const result = await runner.run(flow);
 
-    expect(result.outputDir).toContain("/tmp/screen-cap-flows/");
+    expect(result.outputDir).toContain(FLOW_DIR + "/");
   });
 
   it("respects custom FLOW_OUTPUT_DIR", async () => {
@@ -910,7 +912,7 @@ describe("path confinement", () => {
 
   it("rejects symlink escape from FLOW_OUTPUT_DIR", async () => {
     mockConfineDir.mockResolvedValueOnce({
-      error: "Path must be within /tmp/screen-cap-flows (symlink detected)",
+      error: `Path must be within ${FLOW_DIR} (symlink detected)`,
     });
 
     const flow: FlowDefinition = {

@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ── Mock Setup ──────────────────────────────────────────────────────────
@@ -39,14 +40,19 @@ vi.mock("node:fs/promises", () => ({
 const mockConfinePath = vi.fn();
 const mockSafeWriteFile = vi.fn();
 
-vi.mock("../util/path-confinement.js", () => ({
-  resolveConfigDir: (_envVar: string, defaultPath: string) => {
-    const raw = process.env.RECORDING_DIR ?? defaultPath;
-    return raw.startsWith("/") ? raw : `/cwd/${raw}`;
-  },
-  confinePath: (...args: unknown[]) => mockConfinePath(...args),
-  safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
-}));
+vi.mock("../util/path-confinement.js", async () => {
+  const { resolve: nodeResolve } = await import("node:path");
+  return {
+    resolveConfigDir: (_envVar: string, defaultPath: string) => {
+      const raw = process.env.RECORDING_DIR ?? defaultPath;
+      const resolved = nodeResolve(raw);
+      if (resolved === "/") throw new Error(`${_envVar} must not resolve to the filesystem root.`);
+      return resolved;
+    },
+    confinePath: (...args: unknown[]) => mockConfinePath(...args),
+    safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
+  };
+});
 
 // Mock transcode
 const mockTranscode = vi.fn().mockResolvedValue(undefined);
@@ -105,8 +111,8 @@ function getRegisteredTools(server: McpServer): RegisteredToolsMap {
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-/** Default RECORDING_DIR used in tests. */
-const TEST_RECORDING_DIR = "/tmp/screen-cap-recordings";
+/** Default RECORDING_DIR used in tests — CWD-relative "./recordings" resolved to absolute. */
+const TEST_RECORDING_DIR = resolve("./recordings");
 
 // Base64 PNG stub (1x1 transparent pixel)
 const FAKE_SCREENSHOT_BUFFER = Buffer.from(
