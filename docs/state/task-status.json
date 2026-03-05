@@ -1,17 +1,17 @@
 {
-  "feature": "click-indicator-integration",
+  "feature": "reduce-channel-roi-demo-sleep",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-45",
+    "sourceTicket": "PP-46",
     "mapping": {
-      "T001": { "ticketId": "PP-45", "identifier": "PP-45" },
-      "T002": { "ticketId": "PP-45", "identifier": "PP-45" }
+      "T001": { "ticketId": "PP-46", "identifier": "PP-46" },
+      "T002": { "ticketId": "PP-46", "identifier": "PP-46" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write failing tests for click/hover indicator integration" },
-    "T002": { "status": "complete", "description": "Add indicator calls to 4 CDP helper functions", "checkpoint": "93b3c20" }
+    "T001": { "status": "complete", "description": "Test: Validate sleep duration reductions" },
+    "T002": { "status": "complete", "description": "Implement: Apply sleep duration reductions" }
   }
 }

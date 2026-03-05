@@ -18,7 +18,7 @@
         },
         {
           "action": "sleep",
-          "duration": 8000,
+          "duration": 5500,
           "label": "Wait for Growth Center to fully render"
         },
         {
@@ -40,7 +40,7 @@
         },
         {
           "action": "sleep",
-          "duration": 10000,
+          "duration": 7000,
           "label": "Let Channel ROI page fully load"
         },
         {
@@ -56,7 +56,7 @@
       "steps": [
         {
           "action": "sleep",
-          "duration": 2500,
+          "duration": 1750,
           "label": "Admire KPI summary cards"
         },
         {
@@ -67,7 +67,7 @@
         },
         {
           "action": "sleep",
-          "duration": 3000,
+          "duration": 2000,
           "label": "Read MAITE insight cards"
         },
         {
@@ -82,7 +82,7 @@
         },
         {
           "action": "sleep",
-          "duration": 1000
+          "duration": 700
         }
       ]
     },
@@ -93,7 +93,7 @@
       "steps": [
         {
           "action": "sleep",
-          "duration": 3000,
+          "duration": 2000,
           "label": "Let page JS settle before interacting with date picker"
         },
         {
@@ -104,7 +104,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Show date picker with presets"
         },
         {
@@ -120,7 +120,7 @@
       "steps": [
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Let date picker popup stabilize"
         },
         {
@@ -131,7 +131,7 @@
         },
         {
           "action": "sleep",
-          "duration": 8000,
+          "duration": 5500,
           "label": "Wait for data to reload with new date range"
         },
         {
@@ -153,7 +153,7 @@
         },
         {
           "action": "sleep",
-          "duration": 1500,
+          "duration": 1000,
           "label": "Show brand hierarchy"
         },
         {
@@ -175,7 +175,7 @@
         },
         {
           "action": "sleep",
-          "duration": 10000,
+          "duration": 7000,
           "label": "Wait for filtered data to load"
         },
         {
@@ -197,7 +197,7 @@
         },
         {
           "action": "sleep",
-          "duration": 3000,
+          "duration": 2000,
           "label": "Read brand-specific MAITE insights"
         },
         {
@@ -212,7 +212,7 @@
         },
         {
           "action": "sleep",
-          "duration": 1000
+          "duration": 700
         }
       ]
     },
@@ -229,7 +229,7 @@
         },
         {
           "action": "sleep",
-          "duration": 1500,
+          "duration": 1000,
           "label": "Show funnel options"
         },
         {
@@ -251,7 +251,7 @@
         },
         {
           "action": "sleep",
-          "duration": 10000,
+          "duration": 7000,
           "label": "Wait for brand funnel data to load"
         },
         {
@@ -273,7 +273,7 @@
         },
         {
           "action": "sleep",
-          "duration": 3000,
+          "duration": 2000,
           "label": "Admire the bubble chart"
         },
         {
@@ -288,7 +288,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Show full bubble chart with all channels"
         },
         {
@@ -320,7 +320,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Show column chart"
         },
         {
@@ -342,7 +342,7 @@
         },
         {
           "action": "sleep",
-          "duration": 1000,
+          "duration": 700,
           "label": "Show view options"
         }
       ]
@@ -360,7 +360,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Show ROI column chart"
         },
         {
@@ -382,7 +382,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2500,
+          "duration": 1750,
           "label": "Show stacked bar chart by product category"
         },
         {
@@ -393,7 +393,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Admire distribution breakdown"
         },
         {
@@ -415,7 +415,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2500,
+          "duration": 1750,
           "label": "Show Ad Stocks - Length of Effect and Peak"
         },
         {
@@ -430,7 +430,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Show all channel ad stock bars"
         },
         {
@@ -452,7 +452,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2500,
+          "duration": 1750,
           "label": "Show Insights Table"
         },
         {
@@ -467,7 +467,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2500,
+          "duration": 1750,
           "label": "Browse channel performance data"
         },
         {
@@ -489,7 +489,7 @@
         },
         {
           "action": "sleep",
-          "duration": 2000,
+          "duration": 1400,
           "label": "Final view of Channel ROI"
         },
         {
