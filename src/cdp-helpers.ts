@@ -17,6 +17,7 @@ import type { CDPSession } from "puppeteer-core";
 import { ensureCDPSession, ensurePage } from "./browser.js";
 import logger from "./util/logger.js";
 import { animateMouseTo, setMousePosition } from "./util/mouse-animator.js";
+import { showClickIndicator, showHoverIndicator } from "./util/click-indicator.js";
 
 /** Options for click and hover operations. */
 export interface InteractionOptions {
@@ -137,6 +138,7 @@ export async function clickByBackendNodeId(
 
     if (options?.animate) {
       await animateMouseTo(center.x, center.y);
+      await showClickIndicator(center.x, center.y);
     }
 
     await cdp.send("Input.dispatchMouseEvent", {
@@ -221,6 +223,7 @@ export async function hoverByBackendNodeId(
 
     if (options?.animate) {
       await animateMouseTo(center.x, center.y);
+      await showHoverIndicator(center.x, center.y);
     }
 
     await cdp.send("Input.dispatchMouseEvent", {
@@ -259,6 +262,7 @@ export async function clickAtCoordinates(
 
   if (options?.animate) {
     await animateMouseTo(x, y);
+    await showClickIndicator(x, y);
   }
 
   const cdp = await ensureCDPSession();
@@ -304,6 +308,7 @@ export async function hoverAtCoordinates(
 
   if (options?.animate) {
     await animateMouseTo(x, y);
+    await showHoverIndicator(x, y);
   }
 
   const cdp = await ensureCDPSession();

@@ -1,17 +1,17 @@
 {
-  "feature": "click-indicator",
+  "feature": "click-indicator-integration",
   "tickets": {
     "enabled": true,
     "type": "linear",
     "team": "Engineering",
-    "sourceTicket": "PP-44",
+    "sourceTicket": "PP-45",
     "mapping": {
-      "T001": { "ticketId": "PP-44", "identifier": "PP-44" },
-      "T002": { "ticketId": "PP-44", "identifier": "PP-44" }
+      "T001": { "ticketId": "PP-45", "identifier": "PP-45" },
+      "T002": { "ticketId": "PP-45", "identifier": "PP-45" }
     }
   },
   "tasks": {
-    "T001": { "status": "complete", "description": "Write failing tests for click-indicator" },
-    "T002": { "status": "complete", "description": "Implement click-indicator utility", "checkpoint": "4f1cf68" }
+    "T001": { "status": "complete", "description": "Write failing tests for click/hover indicator integration" },
+    "T002": { "status": "complete", "description": "Add indicator calls to 4 CDP helper functions", "checkpoint": "93b3c20" }
   }
 }
