@@ -34,7 +34,7 @@ export async function showClickIndicator(
     const page = await ensurePage();
     await page.evaluate(injectIndicator, x, y, "click", 400);
   } catch (err) {
-    logger.debug("Click indicator failed", err);
+    logger.debug(`Click indicator failed: ${err}`);
   }
 }
 
@@ -54,7 +54,7 @@ export async function showHoverIndicator(
     const page = await ensurePage();
     await page.evaluate(injectIndicator, x, y, "hover", 300);
   } catch (err) {
-    logger.debug("Hover indicator failed", err);
+    logger.debug(`Hover indicator failed: ${err}`);
   }
 }
 
