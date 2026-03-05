@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { resolveConfigDir, confinePath, safeWriteFile } from "../util/path-confinement.js";
 import { ensurePage } from "../browser.js";
 import logger from "../util/logger.js";
+import { transcodeMp4ToH264 } from "../util/transcode.js";
 import {
   recState,
   cleanupRecordingState,
@@ -204,6 +205,15 @@ export function registerRecordingTools(server: McpServer): void {
 
         // Stop the recorder
         await recState.recorder.stop();
+
+        // Transcode VP9 to H.264 for compatibility
+        if (recState.path) {
+          try {
+            await transcodeMp4ToH264(recState.path);
+          } catch (err) {
+            logger.warn(`Failed to transcode recording to H.264: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
 
         // Calculate duration
         const durationMs = Date.now() - recState.startTime;

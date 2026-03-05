@@ -48,15 +48,24 @@ vi.mock("../util/path-confinement.js", () => ({
   safeWriteFile: (...args: unknown[]) => mockSafeWriteFile(...args),
 }));
 
+// Mock transcode
+const mockTranscode = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("../util/transcode.js", () => ({
+  transcodeMp4ToH264: (...args: unknown[]) => mockTranscode(...args),
+}));
+
 // Mock logger
+const mockLogger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
+  error: vi.fn(),
+  setLogLevel: vi.fn(),
+};
+
 vi.mock("../util/logger.js", () => ({
-  default: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-    setLogLevel: vi.fn(),
-  },
+  default: mockLogger,
 }));
 
 // Mock ScreenRecorder
@@ -360,6 +369,10 @@ describe("browser_stop_recording", () => {
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toContain("Recording stopped");
     expect(result.isError).toBeFalsy();
+    // Transcode should be called with the recording path
+    expect(mockTranscode).toHaveBeenCalledWith(
+      expect.stringContaining(TEST_RECORDING_DIR),
+    );
   });
 
   it("returns recording path in results", async () => {
@@ -408,6 +421,7 @@ describe("browser_stop_recording", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].type).toBe("text");
     expect(result.content[0].text).toContain("No recording");
+    expect(mockTranscode).not.toHaveBeenCalled();
   });
 
   it("clears recording state after stopping (allows new recording)", async () => {
@@ -420,6 +434,23 @@ describe("browser_stop_recording", () => {
     // Should be able to start a new recording
     const result = await startHandler({}, { signal: new AbortController().signal });
     expect(result.isError).toBeFalsy();
+  });
+
+  it("warns but does not fail when transcode errors", async () => {
+    mockTranscode.mockRejectedValueOnce(new Error("ffmpeg not installed"));
+
+    const startHandler = getToolHandler(server, "browser_start_recording");
+    await startHandler({}, { signal: new AbortController().signal });
+
+    const stopHandler = getToolHandler(server, "browser_stop_recording");
+    const result = await stopHandler({}, { signal: new AbortController().signal });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("Recording stopped");
+    expect(mockTranscode).toHaveBeenCalled();
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("ffmpeg not installed"),
+    );
   });
 
   it("returns error text when recorder.stop() fails (does not throw)", async () => {
