@@ -134,7 +134,33 @@ export async function ensureBrowser(): Promise<Browser> {
  * Throws if Chrome has no open tabs.
  */
 export async function ensurePage(): Promise<Page> {
-  if (page) return page;
+  if (page) {
+    // Validate the cached page is still alive
+    let isStale = false;
+
+    if (page.isClosed()) {
+      logger.warn("Cached page was closed — re-acquiring...");
+      isStale = true;
+    } else {
+      // Probe with url() to catch detached frames that isClosed() misses
+      try {
+        page.url();
+      } catch {
+        logger.warn("Cached page is detached — re-acquiring...");
+        isStale = true;
+      }
+    }
+
+    if (isStale) {
+      page = null;
+      pagePromise = null;
+      cdpSession = null;
+      cdpSessionPromise = null;
+      clearRefs();
+    } else {
+      return page;
+    }
+  }
   if (pagePromise) return pagePromise;
 
   pagePromise = (async () => {
