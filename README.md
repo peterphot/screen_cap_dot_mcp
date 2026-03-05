@@ -231,7 +231,7 @@ The manifest includes timing, success/failure status, file paths, and error mess
 | `SCREENSHOT_DIR` | `./screenshots` | Screenshot output directory (relative to CWD) |
 | `RECORDING_DIR` | `./recordings` | Video recording output directory (relative to CWD) |
 | `FLOW_OUTPUT_DIR` | `./flow-output` | Flow execution output directory (relative to CWD) |
-| `FLOWS_DIR` | `flows/` | Directory for saved flow definitions |
+| `FLOWS_DIR` | `./flows` | Directory for saved flow definitions |
 | `ALLOW_EVALUATE` | *(disabled)* | Set to `"true"` to enable `browser_evaluate` and flow `evaluate` steps |
 
 ## Security
