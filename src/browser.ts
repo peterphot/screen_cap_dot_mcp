@@ -71,6 +71,19 @@ function getBrowserUrl(): string {
   return raw;
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+/** Check whether a cached Page reference is still usable. */
+function isPageAlive(p: Page): boolean {
+  if (p.isClosed()) return false;
+  try {
+    p.url();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Connection management ───────────────────────────────────────────────
 
 /**
@@ -138,20 +151,17 @@ export async function ensurePage(): Promise<Page> {
     // Validate the cached page is still alive
     let isStale = false;
 
-    if (page.isClosed()) {
-      logger.warn("Cached page was closed — re-acquiring...");
+    if (!isPageAlive(page)) {
       isStale = true;
-    } else {
-      // Probe with url() to catch detached frames that isClosed() misses
-      try {
-        page.url();
-      } catch {
+      if (page.isClosed()) {
+        logger.warn("Cached page was closed — re-acquiring...");
+      } else {
         logger.warn("Cached page is detached — re-acquiring...");
-        isStale = true;
       }
     }
 
     if (isStale) {
+      cleanupRecordingState();
       page = null;
       pagePromise = null;
       cdpSession = null;

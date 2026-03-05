@@ -583,6 +583,7 @@ describe("stale page cache recovery", () => {
     // create a new session on the fresh page
     const session = await ensureCDPSession();
     expect(freshPage.createCDPSession).toHaveBeenCalled();
+    expect(session).toBe(mockCDPSession);
   });
 
   it("returns cached page immediately when it is still alive", async () => {
