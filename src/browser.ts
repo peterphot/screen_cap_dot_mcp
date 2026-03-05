@@ -71,6 +71,19 @@ function getBrowserUrl(): string {
   return raw;
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+/** Check whether a cached Page reference is still usable. */
+function isPageAlive(p: Page): boolean {
+  if (p.isClosed()) return false;
+  try {
+    p.url();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Connection management ───────────────────────────────────────────────
 
 /**
@@ -134,7 +147,23 @@ export async function ensureBrowser(): Promise<Browser> {
  * Throws if Chrome has no open tabs.
  */
 export async function ensurePage(): Promise<Page> {
-  if (page) return page;
+  if (page) {
+    if (!isPageAlive(page)) {
+      if (page.isClosed()) {
+        logger.warn("Cached page was closed — re-acquiring...");
+      } else {
+        logger.warn("Cached page is detached — re-acquiring...");
+      }
+      cleanupRecordingState();
+      page = null;
+      pagePromise = null;
+      cdpSession = null;
+      cdpSessionPromise = null;
+      clearRefs();
+    } else {
+      return page;
+    }
+  }
   if (pagePromise) return pagePromise;
 
   pagePromise = (async () => {

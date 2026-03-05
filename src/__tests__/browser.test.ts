@@ -21,6 +21,7 @@ interface MockCDPSession {
 interface MockPage {
   url: ReturnType<typeof vi.fn>;
   title: ReturnType<typeof vi.fn>;
+  isClosed: ReturnType<typeof vi.fn>;
   setDefaultNavigationTimeout: ReturnType<typeof vi.fn>;
   bringToFront: ReturnType<typeof vi.fn>;
   createCDPSession: ReturnType<typeof vi.fn>;
@@ -42,6 +43,7 @@ function createMockPage(url: string, title: string): MockPage {
   return {
     url: vi.fn().mockReturnValue(url),
     title: vi.fn().mockResolvedValue(title),
+    isClosed: vi.fn().mockReturnValue(false),
     setDefaultNavigationTimeout: vi.fn(),
     bringToFront: vi.fn().mockResolvedValue(undefined),
     createCDPSession: vi.fn(),
@@ -512,5 +514,107 @@ describe("disconnect race guards", () => {
     await expect(ensureCDPSession()).rejects.toThrow(
       "Browser disconnected during CDP session creation",
     );
+  });
+});
+
+// ── Stale page cache recovery (PP-36) ──────────────────────────────────
+
+describe("stale page cache recovery", () => {
+  it("re-acquires page when isClosed() returns true", async () => {
+    // First call caches a page
+    const firstPage = await ensurePage();
+    expect(firstPage).toBe(mockPage);
+
+    // Simulate the tab being closed
+    mockPage.isClosed.mockReturnValue(true);
+
+    // Create a fresh page for re-acquisition
+    const freshPage = createMockPage("https://fresh.com", "Fresh");
+    freshPage.createCDPSession.mockResolvedValue(mockCDPSession);
+    mockBrowser.pages.mockResolvedValue([freshPage]);
+
+    // Next call should detect the closed page and re-acquire
+    const secondPage = await ensurePage();
+    expect(secondPage).toBe(freshPage);
+    expect(mockBrowser.pages).toHaveBeenCalledTimes(2); // once for initial, once for re-acquire
+  });
+
+  it("re-acquires page when url() probe throws (detached frame)", async () => {
+    // First call caches a page
+    const firstPage = await ensurePage();
+    expect(firstPage).toBe(mockPage);
+
+    // Simulate detached frame: isClosed() returns false but url() throws
+    mockPage.isClosed.mockReturnValue(false);
+    mockPage.url.mockImplementation(() => {
+      throw new Error("Execution context is not available in detached frame");
+    });
+
+    // Create a fresh page for re-acquisition
+    const freshPage = createMockPage("https://fresh.com", "Fresh");
+    freshPage.createCDPSession.mockResolvedValue(mockCDPSession);
+    mockBrowser.pages.mockResolvedValue([freshPage]);
+
+    // Next call should detect the detached page and re-acquire
+    const secondPage = await ensurePage();
+    expect(secondPage).toBe(freshPage);
+    expect(mockBrowser.pages).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears cdpSession and refs when recovering from stale page", async () => {
+    // Establish full state: page + CDP session
+    await ensureCDPSession();
+
+    // Simulate the tab being closed
+    mockPage.isClosed.mockReturnValue(true);
+
+    // Create a fresh page for re-acquisition
+    const freshPage = createMockPage("https://fresh.com", "Fresh");
+    freshPage.createCDPSession.mockResolvedValue(mockCDPSession);
+    mockBrowser.pages.mockResolvedValue([freshPage]);
+
+    // Re-acquire the page
+    await ensurePage();
+
+    // cleanupRecordingState and clearRefs should have been called during stale page recovery
+    expect(cleanupRecordingState).toHaveBeenCalled();
+    expect(clearRefs).toHaveBeenCalled();
+
+    // CDP session should have been invalidated — ensureCDPSession should
+    // create a new session on the fresh page
+    const session = await ensureCDPSession();
+    expect(freshPage.createCDPSession).toHaveBeenCalled();
+    expect(session).toBe(mockCDPSession);
+  });
+
+  it("returns cached page immediately when it is still alive", async () => {
+    // First call caches a page
+    await ensurePage();
+
+    // Page is healthy — isClosed() returns false, url() works fine
+    mockPage.isClosed.mockReturnValue(false);
+
+    // Second call should return cached page without re-acquiring
+    const secondPage = await ensurePage();
+    expect(secondPage).toBe(mockPage);
+    expect(mockBrowser.pages).toHaveBeenCalledTimes(1); // no second pages() call
+  });
+
+  it("nulls pagePromise when recovering from stale page", async () => {
+    // Cache a page
+    await ensurePage();
+
+    // Close it
+    mockPage.isClosed.mockReturnValue(true);
+
+    // Prepare fresh page
+    const freshPage = createMockPage("https://fresh.com", "Fresh");
+    freshPage.createCDPSession.mockResolvedValue(mockCDPSession);
+    mockBrowser.pages.mockResolvedValue([freshPage]);
+
+    // Concurrent calls after stale detection should share a single re-acquire
+    const [p1, p2] = await Promise.all([ensurePage(), ensurePage()]);
+    expect(p1).toBe(p2);
+    expect(p1).toBe(freshPage);
   });
 });
