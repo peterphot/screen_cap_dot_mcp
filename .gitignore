@@ -1,6 +1,5 @@
 node_modules/
 dist/
-output/
 *.tsbuildinfo
 .env
 .env.*

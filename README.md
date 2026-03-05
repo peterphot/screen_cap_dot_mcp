@@ -274,7 +274,9 @@ src/
     wait-strategies.ts     # Smart wait selectors for common UI frameworks
   __tests__/               # 11 test files covering all modules
 flows/                     # Saved flow definitions (JSON)
-output/                    # Generated artifacts (screenshots, recordings)
+screenshots/               # Screenshot output (default SCREENSHOT_DIR)
+recordings/                # Video recording output (default RECORDING_DIR)
+flow-output/               # Flow execution output (default FLOW_OUTPUT_DIR)
 ```
 
 ## Architecture
